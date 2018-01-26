@@ -1,0 +1,30 @@
+version: v.2.3.2.1
+pidfile: ./jobserver.pid
+retrystartup: true
+cluster:
+  datacenter: dev #gdev|gqc|e3|e4|e11|wh7|cross-dc
+  hosts: 10.16.75.23:8481,10.16.75.25:8481,10.16.75.26:8481
+  root: /cloudtask_dev
+  pulse: 30s
+  timeout: 60s
+  threshold: 1
+api:
+  hosts: [":8985"]
+  enablecors: true
+scheduler:
+  allocmode: hash #pref
+  allocrecovery: 320s
+cache:
+  lrusize: 1024
+  cloudpagesize: 512
+notifications:
+    endpoints:
+      - name: api
+        url: http://10.16.75.24:3000/framework/v1/mail
+        sender: cloudtask@newegg.com
+        enabled: true
+logger:
+    logfile: ./logs/jobserver.log
+    loglevel: info
+    logsize: 20971520
+...
