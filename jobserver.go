@@ -10,6 +10,7 @@ import "github.com/cloudtask/libtools/gounits/system"
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"time"
@@ -43,7 +44,12 @@ func NewJobServer() (*JobServer, error) {
 		return nil, err
 	}
 
-	logger.OPEN(etc.LoggerArgs())
+	logConfigs := etc.LoggerConfigs()
+	if logConfigs == nil {
+		return nil, fmt.Errorf("logger configs invalid.")
+	}
+	logger.OPEN(logConfigs)
+
 	key, err := rand.UUIDFile("./jobserver.key") //服务器唯一标识文件
 	if err != nil {
 		return nil, err
@@ -61,7 +67,6 @@ func NewJobServer() (*JobServer, error) {
 
 	api.RegisterStore("AppCode", AppCode)
 	api.RegisterStore("SystemConfig", etc.SystemConfig)
-	api.RegisterStore("ServerConfig", etc.ServerConfig)
 	api.RegisterStore("ServerKey", centerServer.Key)
 	api.RegisterStore("NodeData", centerServer.Data)
 	api.RegisterStore("CacheRepository", centerServer.CacheRepository)

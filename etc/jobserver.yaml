@@ -2,8 +2,7 @@ version: v.2.3.2.1
 pidfile: ./jobserver.pid
 retrystartup: true
 cluster:
-  datacenter: dev #gdev|gqc|e3|e4|e11|wh7|cross-dc
-  hosts: 10.16.75.23:8481,10.16.75.25:8481,10.16.75.26:8481
+  hosts: 192.168.2.80:2181,192.168.2.81:2181,192.168.2.82:2181
   root: /cloudtask_dev
   pulse: 30s
   timeout: 60s
@@ -16,13 +15,22 @@ scheduler:
   allocrecovery: 320s
 cache:
   lrusize: 1024
-  cloudpagesize: 512
+  storage:
+      mongo:
+        hosts: mongodb://192.168.2.80:27017,192.168.2.81:27017,192.168.2.82:27017/cloudtask_dev?replicaSet=mgoCluster&maxPoolSize=20
+        database: cloudtask_dev
+      #ngcloud:
+      #  apiurl: http://apis.newegg.org/datastore/v1/cloudtask_dev
+      #  readpagesize: 512
 notifications:
     endpoints:
-      - name: api
-        url: http://10.16.75.24:3000/framework/v1/mail
-        sender: cloudtask@newegg.com
-        enabled: true
+      - name: smtp
+        host: smtp.example.com
+        port: 456
+        user: abc
+        password: 123456
+        sender: abc@.example.com
+        enabled: true  
 logger:
     logfile: ./logs/jobserver.log
     loglevel: info

@@ -1,34 +1,27 @@
-package cache
-
-import "github.com/cloudtask/common/models"
-import "github.com/cloudtask/libtools/gounits/httpx"
+package ngcloud
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
-)
 
-var (
-	ERR_RESOURCE_NOTFOUND = errors.New("resource not found.")
-)
-
-const (
-	DefaultCloudPageSize = 512
+	"github.com/cloudtask/cloudtask-center/cache/driver/types"
+	"github.com/cloudtask/common/models"
+	"github.com/cloudtask/libtools/gounits/httpx"
 )
 
 //Engine is exported
 type Engine struct {
-	cloudPageSize int
-	serverConfig  *models.ServerConfig
-	httpClient    *httpx.HttpClient
+	rawAPIURL    string
+	readPageSize int
+	client       *httpx.HttpClient
 }
 
-func NewEngine(cloudPageSize int, serverConfig *models.ServerConfig) *Engine {
+//NewEngine is exported
+func NewEngine(rawAPIURL string, readPageSize int) *Engine {
 
 	client := httpx.NewClient().
 		SetTransport(&http.Transport{
@@ -45,20 +38,16 @@ func NewEngine(cloudPageSize int, serverConfig *models.ServerConfig) *Engine {
 			ExpectContinueTimeout: http.DefaultTransport.(*http.Transport).ExpectContinueTimeout,
 		})
 
-	if cloudPageSize <= 0 {
-		cloudPageSize = DefaultCloudPageSize
-	}
-
 	return &Engine{
-		cloudPageSize: cloudPageSize,
-		serverConfig:  serverConfig,
-		httpClient:    client,
+		rawAPIURL:    rawAPIURL,
+		readPageSize: readPageSize,
+		client:       client,
 	}
 }
 
 func (engine *Engine) getLocation(location string) (*models.WorkLocation, error) {
 
-	respData, err := engine.httpClient.Get(context.Background(), engine.serverConfig.CloudDataAPI+"/sys_locations/"+location, nil, nil)
+	respData, err := engine.client.Get(context.Background(), engine.rawAPIURL+"/sys_locations/"+location, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +59,7 @@ func (engine *Engine) getLocation(location string) (*models.WorkLocation, error)
 	}
 
 	if statusCode == http.StatusNoContent {
-		return nil, ERR_RESOURCE_NOTFOUND
+		return nil, types.ErrDriverResourceNotFound
 	}
 
 	workLocation := &models.WorkLocation{}
@@ -82,7 +71,7 @@ func (engine *Engine) getLocation(location string) (*models.WorkLocation, error)
 
 func (engine *Engine) postLocation(workLocation *models.WorkLocation) error {
 
-	respData, err := engine.httpClient.PostJSON(context.Background(), engine.serverConfig.CloudDataAPI+"/sys_locations", nil, workLocation, nil)
+	respData, err := engine.client.PostJSON(context.Background(), engine.rawAPIURL+"/sys_locations", nil, workLocation, nil)
 	if err != nil {
 		return err
 	}
@@ -103,13 +92,13 @@ func (engine *Engine) readLocationsName() ([]string, error) {
 	)
 
 	query := map[string][]string{
-		"pageSize": []string{strconv.Itoa(engine.cloudPageSize)},
+		"pageSize": []string{strconv.Itoa(engine.readPageSize)},
 		"fields":   []string{`["location"]`},
 	}
 
 	for {
 		query["pageIndex"] = []string{strconv.Itoa(pageIndex)}
-		respData, err := engine.httpClient.Get(context.Background(), engine.serverConfig.CloudDataAPI+"/sys_locations", query, nil)
+		respData, err := engine.client.Get(context.Background(), engine.rawAPIURL+"/sys_locations", query, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -142,11 +131,11 @@ func (engine *Engine) readSimpleJobs(query map[string][]string) ([]*models.Simpl
 		jobs      = []*models.SimpleJob{}
 	)
 
-	query["pageSize"] = []string{strconv.Itoa(engine.cloudPageSize)}
+	query["pageSize"] = []string{strconv.Itoa(engine.readPageSize)}
 	query["fields"] = []string{`["jobid","name","location","groupid","servers","enabled","stat"]`}
 	for {
 		query["pageIndex"] = []string{strconv.Itoa(pageIndex)}
-		respData, err := engine.httpClient.Get(context.Background(), engine.serverConfig.CloudDataAPI+"/sys_jobs", query, nil)
+		respData, err := engine.client.Get(context.Background(), engine.rawAPIURL+"/sys_jobs", query, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -179,10 +168,10 @@ func (engine *Engine) readJobs(query map[string][]string) ([]*models.Job, error)
 		jobs      = []*models.Job{}
 	)
 
-	query["pageSize"] = []string{strconv.Itoa(engine.cloudPageSize)}
+	query["pageSize"] = []string{strconv.Itoa(engine.readPageSize)}
 	for {
 		query["pageIndex"] = []string{strconv.Itoa(pageIndex)}
-		respData, err := engine.httpClient.Get(context.Background(), engine.serverConfig.CloudDataAPI+"/sys_jobs", query, nil)
+		respData, err := engine.client.Get(context.Background(), engine.rawAPIURL+"/sys_jobs", query, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -228,7 +217,7 @@ func (engine *Engine) getSimpleJob(jobid string) (*models.SimpleJob, error) {
 
 func (engine *Engine) getJob(jobid string) (*models.Job, error) {
 
-	respData, err := engine.httpClient.Get(context.Background(), engine.serverConfig.CloudDataAPI+"/sys_jobs/"+jobid, nil, nil)
+	respData, err := engine.client.Get(context.Background(), engine.rawAPIURL+"/sys_jobs/"+jobid, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +229,7 @@ func (engine *Engine) getJob(jobid string) (*models.Job, error) {
 	}
 
 	if statusCode == http.StatusNoContent {
-		return nil, ERR_RESOURCE_NOTFOUND
+		return nil, types.ErrDriverResourceNotFound
 	}
 
 	job := &models.Job{}
@@ -252,7 +241,7 @@ func (engine *Engine) getJob(jobid string) (*models.Job, error) {
 
 func (engine *Engine) putJob(job *models.Job) error {
 
-	respData, err := engine.httpClient.PutJSON(context.Background(), engine.serverConfig.CloudDataAPI+"/sys_jobs", nil, job, nil)
+	respData, err := engine.client.PutJSON(context.Background(), engine.rawAPIURL+"/sys_jobs", nil, job, nil)
 	if err != nil {
 		return err
 	}
@@ -265,27 +254,21 @@ func (engine *Engine) putJob(job *models.Job) error {
 	return nil
 }
 
-func (engine *Engine) putJobAction(rawapi string, location string, jobid string, action string) error {
+func (engine *Engine) postJobLog(jobLog *models.JobLog) error {
 
-	jobAction := struct {
-		Runtime string `json:"runtime"`
-		JobId   string `json:"jobid"`
-		Action  string `json:"action"`
-	}{
-		Runtime: location,
-		JobId:   jobid,
-		Action:  action,
+	query := map[string][]string{
+		"strict": []string{"true"},
 	}
 
-	respData, err := engine.httpClient.PutJSON(context.Background(), rawapi+"/cloudtask/v2/jobs/action", nil, &jobAction, nil)
+	resp, err := engine.client.PostJSON(context.Background(), engine.rawAPIURL+"/logs", query, jobLog, nil)
 	if err != nil {
 		return err
 	}
 
-	defer respData.Close()
-	statusCode := respData.StatusCode()
+	defer resp.Close()
+	statusCode := resp.StatusCode()
 	if statusCode >= http.StatusBadRequest {
-		return fmt.Errorf("HTTP PUT job %s action %s failure %d.", jobid, action, statusCode)
+		return fmt.Errorf("HTTP POST logs %s failure %d.", jobLog.JobId, statusCode)
 	}
 	return nil
 }

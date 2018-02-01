@@ -1,11 +1,12 @@
 package etc
 
 import "github.com/cloudtask/cloudtask-center/cache"
+import "github.com/cloudtask/cloudtask-center/cache/driver/types"
 import "github.com/cloudtask/cloudtask-center/notify"
-import "github.com/cloudtask/common/models"
-import "github.com/cloudtask/libtools/gzkwrapper"
+import "github.com/cloudtask/cloudtask-center/scheduler"
 import "github.com/cloudtask/libtools/gounits/logger"
 import "github.com/cloudtask/libtools/gounits/system"
+import "github.com/cloudtask/libtools/gzkwrapper"
 import "gopkg.in/yaml.v2"
 
 import (
@@ -16,13 +17,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
-	"sync"
 )
 
 var (
-	SystemConfig *Configuration       = nil
-	ServerConfig *models.ServerConfig = nil
+	SystemConfig *Configuration = nil
 )
 
 var (
@@ -34,22 +32,20 @@ var (
 
 // Configuration is exported
 type Configuration struct {
-	sync.RWMutex
 	Version      string `yaml:"version" json:"version"`
 	PidFile      string `yaml:"pidfile" json:"pidfile"`
 	RetryStartup bool   `yaml:"retrystartup" json:"retrystartup"`
 
 	Cluster struct {
-		DataCenter string `yaml:"datacenter" json:"datacenter"`
-		Hosts      string `yaml:"hosts" json:"hosts"`
-		Root       string `yaml:"root" json:"root"`
-		Device     string `yaml:"device" json:"device"`
-		Runtime    string `yaml:"runtime" json:"runtime"`
-		OS         string `yaml:"os" json:"os"`
-		Platform   string `yaml:"platform" json:"platform"`
-		Pulse      string `yaml:"pulse" json:"pulse"`
-		Timeout    string `yaml:"timeout" json:"timeout"`
-		Threshold  int    `yaml:"threshold" json:"threshold"`
+		Hosts     string `yaml:"hosts" json:"hosts"`
+		Root      string `yaml:"root" json:"root"`
+		Device    string `yaml:"device" json:"device"`
+		Runtime   string `yaml:"runtime" json:"runtime"`
+		OS        string `yaml:"os" json:"os"`
+		Platform  string `yaml:"platform" json:"platform"`
+		Pulse     string `yaml:"pulse" json:"pulse"`
+		Timeout   string `yaml:"timeout" json:"timeout"`
+		Threshold int    `yaml:"threshold" json:"threshold"`
 	} `yaml:"cluster" json:"cluster"`
 
 	API struct {
@@ -63,8 +59,8 @@ type Configuration struct {
 	} `yaml:"scheduler" json:"scheduler"`
 
 	Cache struct {
-		LRUSize       int `yaml:"lrusize" json:"lrusize"`
-		CloudPageSize int `yaml:"cloudpagesize" json:"cloudpagesize"`
+		LRUSize                    int `yaml:"lrusize" json:"lrusize"`
+		types.StorageDriverConfigs `yaml:"storage" json:"storage"`
 	} `yaml:"cache" json:"cache"`
 
 	Notifications notify.Notifications `yaml:"notifications" json:"notifications"`
@@ -120,29 +116,6 @@ func New(file string) error {
 	return nil
 }
 
-//SaveServerConfig is exported
-func SaveServerConfig(data []byte) error {
-
-	if SystemConfig != nil {
-		serverConfigs := models.ServerConfigs{}
-		if err := models.ServerConfigsDeCode(data, &serverConfigs); err != nil {
-			return err
-		}
-		for key, value := range serverConfigs {
-			serverConfigs[strings.ToUpper(key)] = value
-		}
-		configKey := strings.ToUpper(SystemConfig.Cluster.DataCenter)
-		serverConfig := serverConfigs[configKey]
-		if serverConfig == nil {
-			return ErrConfigServerDataInvalid
-		}
-		SystemConfig.Lock()
-		ServerConfig = serverConfig
-		SystemConfig.Unlock()
-	}
-	return nil
-}
-
 //PidFile is exported
 func PidFile() string {
 
@@ -161,47 +134,40 @@ func RetryStartup() bool {
 	return false
 }
 
-//AllocMode is exported
-func AllocMode() string {
+//SchedulerConfigs is exported
+func SchedulerConfigs() *scheduler.SchedulerConfigs {
 
 	if SystemConfig != nil {
-		return SystemConfig.Scheduler.AllocMode
-	}
-	return ""
-}
-
-//AllocRecovery is exported
-func AllocRecovery() string {
-
-	if SystemConfig != nil {
-		return SystemConfig.Scheduler.AllocRecovery
-	}
-	return ""
-}
-
-//ClusterArgs is exported
-func ClusterArgs() *gzkwrapper.ServerArgs {
-
-	if SystemConfig != nil {
-		return &gzkwrapper.ServerArgs{
-			Hosts:      SystemConfig.Cluster.Hosts,
-			Root:       SystemConfig.Cluster.Root,
-			Device:     SystemConfig.Cluster.Device,
-			DataCenter: SystemConfig.Cluster.DataCenter,
-			Location:   SystemConfig.Cluster.Runtime,
-			OS:         SystemConfig.Cluster.OS,
-			Platform:   SystemConfig.Cluster.Platform,
-			APIAddr:    SystemConfig.API.Hosts[0],
-			Pulse:      SystemConfig.Cluster.Pulse,
-			Timeout:    SystemConfig.Cluster.Timeout,
-			Threshold:  SystemConfig.Cluster.Threshold,
+		return &scheduler.SchedulerConfigs{
+			AllocMode:     SystemConfig.Scheduler.AllocMode,
+			AllocRecovery: SystemConfig.Scheduler.AllocRecovery,
 		}
 	}
 	return nil
 }
 
-//GetNotifications is exported
-func GetNotifications() []notify.EndPoint {
+//ClusterConfigs is exported
+func ClusterConfigs() *gzkwrapper.ServerArgs {
+
+	if SystemConfig != nil {
+		return &gzkwrapper.ServerArgs{
+			Hosts:     SystemConfig.Cluster.Hosts,
+			Root:      SystemConfig.Cluster.Root,
+			Device:    SystemConfig.Cluster.Device,
+			Location:  SystemConfig.Cluster.Runtime,
+			OS:        SystemConfig.Cluster.OS,
+			Platform:  SystemConfig.Cluster.Platform,
+			APIAddr:   SystemConfig.API.Hosts[0],
+			Pulse:     SystemConfig.Cluster.Pulse,
+			Timeout:   SystemConfig.Cluster.Timeout,
+			Threshold: SystemConfig.Cluster.Threshold,
+		}
+	}
+	return nil
+}
+
+//Notifications is exported
+func Notifications() []notify.EndPoint {
 
 	if SystemConfig != nil {
 		return SystemConfig.Notifications.EndPoints
@@ -209,20 +175,27 @@ func GetNotifications() []notify.EndPoint {
 	return []notify.EndPoint{}
 }
 
-//GetCacheRepositoryArgs is exported
-func GetCacheRepositoryArgs() *cache.CacheRepositoryArgs {
+//CacheConfigs is exported
+func CacheConfigs() *cache.CacheConfigs {
 
+	var configs *cache.CacheConfigs
 	if SystemConfig != nil {
-		return &cache.CacheRepositoryArgs{
-			LRUSize:       SystemConfig.Cache.LRUSize,
-			CloudPageSize: SystemConfig.Cache.CloudPageSize,
+		if len(SystemConfig.Cache.StorageDriverConfigs) > 0 {
+			configs = &cache.CacheConfigs{
+				LRUSize: SystemConfig.Cache.LRUSize,
+			}
+			for backend, paramters := range SystemConfig.Cache.StorageDriverConfigs {
+				configs.StorageBackend = types.Backend(backend)
+				configs.StorageParameters = paramters
+				break
+			}
 		}
 	}
-	return nil
+	return configs
 }
 
-//LoggerArgs is exported
-func LoggerArgs() *logger.Args {
+//LoggerConfigs is exported
+func LoggerConfigs() *logger.Args {
 
 	if SystemConfig != nil {
 		return &logger.Args{
@@ -251,16 +224,8 @@ func readConfigurationFile(file string) ([]byte, error) {
 
 func parseDefaultParmeters(conf *Configuration) {
 
-	if conf.Cluster.DataCenter == "" {
-		conf.Cluster.DataCenter = models.CLUSTER_CROSS_DC
-	}
-
 	if conf.Cache.LRUSize <= 0 {
-		conf.Cache.LRUSize = cache.DefaultLRUSize
-	}
-
-	if conf.Cache.CloudPageSize <= 0 {
-		conf.Cache.CloudPageSize = cache.DefaultCloudPageSize
+		conf.Cache.LRUSize = 512
 	}
 
 	if conf.Cluster.Pulse == "" {

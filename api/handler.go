@@ -45,10 +45,7 @@ func getJobBase(c *Context) error {
 		Schedule:      job.Schedule,
 		NotifySetting: job.NotifySetting,
 	}
-	respData := GetJobBaseResponse{JobBase: jobBase}
-	response.SetContent(ErrRequestSuccessed.Error())
-	response.SetData(respData)
-	return c.JSON(http.StatusOK, response)
+	return c.JSON(http.StatusOK, jobBase)
 }
 
 func getJobsAllocData(c *Context) error {
@@ -125,6 +122,20 @@ func postMessages(c *Context) error {
 			}
 		}
 	}
+	response.SetContent(ErrRequestAccepted.Error())
+	return c.JSON(http.StatusAccepted, response)
+}
+
+func postLogs(c *Context) error {
+
+	response := &ResponseImpl{}
+	request := ResloveJogRequest(c)
+	if request == nil {
+		response.SetContent(ErrRequestResolveInvaild.Error())
+		return c.JSON(http.StatusBadRequest, response)
+	}
+	cacheRepository := c.Get("CacheRepository").(*cache.CacheRepository)
+	cacheRepository.SetJobLog(&request.JobLog)
 	response.SetContent(ErrRequestAccepted.Error())
 	return c.JSON(http.StatusAccepted, response)
 }

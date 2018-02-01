@@ -13,6 +13,12 @@ type MessageRequest struct {
 	Context *Context
 }
 
+//JobLogRequest is exported
+type JobLogRequest struct {
+	Context *Context
+	models.JobLog
+}
+
 //JobActionRequest is exported
 type JobActionRequest struct {
 	Context *Context

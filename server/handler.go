@@ -9,7 +9,7 @@ func (server *CenterServer) OnZkWrapperNodeHandlerFunc(nodestore *gzkwrapper.Nod
 	newTotalSize := nodestore.NewTotalSize()
 	logger.INFO("[#server#] cluster discovery healthy nodes %d", newTotalSize)
 	for key, nodedata := range nodestore.New {
-		logger.INFO("[#server#] %s %s node %s(%s) healthy.", nodedata.Location, nodedata.DataCenter, key, nodedata.IpAddr)
+		logger.INFO("[#server#] %s node %s(%s) healthy.", nodedata.Location, key, nodedata.IpAddr)
 		server.CacheRepository.CreateWorker(key, nodedata)
 		server.CacheRepository.InitAllocBuffer(nodedata.Location, nil)
 	}
@@ -17,14 +17,14 @@ func (server *CenterServer) OnZkWrapperNodeHandlerFunc(nodestore *gzkwrapper.Nod
 	deadTotalSize := nodestore.DeadTotalSize()
 	logger.INFO("[#server#] cluster discovery deadly nodes %d", deadTotalSize)
 	for key, nodedata := range nodestore.Dead {
-		logger.INFO("[#server#] %s %s node %s(%s) deadly.", nodedata.Location, nodedata.DataCenter, key, nodedata.IpAddr)
+		logger.INFO("[#server#] %s node %s(%s) deadly.", nodedata.Location, key, nodedata.IpAddr)
 		server.CacheRepository.RemoveWorker(key, nodedata)
 	}
 
 	recoveryTotalSize := nodestore.RecoveryTotalSize()
 	logger.INFO("[#server#] cluster discovery recovery nodes %d", recoveryTotalSize)
 	for key, nodedata := range nodestore.Recovery {
-		logger.INFO("[#server#] %s %s node %s(%s) recovery.", nodedata.Location, nodedata.DataCenter, key, nodedata.IpAddr)
+		logger.INFO("[#server#] %s node %s(%s) recovery.", nodedata.Location, key, nodedata.IpAddr)
 		server.CacheRepository.ChangeWorker(key, nodedata)
 	}
 
@@ -37,20 +37,6 @@ func (server *CenterServer) OnZkWrapperNodeHandlerFunc(nodestore *gzkwrapper.Nod
 }
 
 func (server *CenterServer) OnZkWrapperPulseHandlerFunc(key string, nodedata *gzkwrapper.NodeData, err error) {
-}
-
-func (server *CenterServer) OnSeverConfigsWatchHandlerFunc(path string, data []byte, err error) {
-
-	if err != nil {
-		logger.ERROR("[#server#] watch server config handler error, %s", err)
-		return
-	}
-
-	if err = server.RefreshServerConfig(data); err != nil {
-		logger.ERROR("[#server#] watch server config save error, %s", err)
-		return
-	}
-	logger.INFO("[#server#] watch server config changed.")
 }
 
 func (server *CenterServer) OnAllocCacheChangedHandlerFunc(location string, data []byte, err error) {

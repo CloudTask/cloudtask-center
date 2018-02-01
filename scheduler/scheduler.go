@@ -25,25 +25,30 @@ type Nodes struct {
 
 //NewNodes is exported
 func NewNodes() *Nodes {
-
 	return &Nodes{
 		Online:  make(gzkwrapper.NodesPair),
 		Offline: make(gzkwrapper.NodesPair),
 	}
 }
 
+//SchedulerConfigs is exported
+type SchedulerConfigs struct {
+	AllocMode     string
+	AllocRecovery string
+}
+
 //Scheduler is exported
 type Scheduler struct {
-	allocMode       string
+	*SchedulerConfigs
 	cacheRepository *cache.CacheRepository
 }
 
 //NewScheduler is exported
-func NewScheduler(allocMode string, cacheRepository *cache.CacheRepository) *Scheduler {
+func NewScheduler(configs *SchedulerConfigs, cacheRepository *cache.CacheRepository) *Scheduler {
 
 	return &Scheduler{
-		allocMode:       allocMode,
-		cacheRepository: cacheRepository,
+		SchedulerConfigs: configs,
+		cacheRepository:  cacheRepository,
 	}
 }
 
@@ -51,7 +56,7 @@ func NewScheduler(allocMode string, cacheRepository *cache.CacheRepository) *Sch
 //以节点状态改变为条件进行分配，调度器对上下线节点进行job调整.
 func (scheduler *Scheduler) QuickAlloc(online gzkwrapper.NodesPair, offline gzkwrapper.NodesPair) {
 
-	logger.INFO("[#scheduler#] quick alloc. %s", scheduler.allocMode)
+	logger.INFO("[#scheduler#] quick alloc. %s", scheduler.AllocMode)
 	nodesMapper := make(map[string]*Nodes, 0)
 	for key, nodedata := range online {
 		location := nodedata.Location
@@ -69,7 +74,7 @@ func (scheduler *Scheduler) QuickAlloc(online gzkwrapper.NodesPair, offline gzkw
 		nodesMapper[location].Offline[key] = nodedata
 	}
 
-	if scheduler.allocMode == "hash" {
+	if scheduler.AllocMode == "hash" {
 		for location, nodes := range nodesMapper {
 			logger.INFO("[#scheduler#] hash alloc %s.", location)
 			scheduler.HashAlloc(location, nodes)
@@ -77,7 +82,7 @@ func (scheduler *Scheduler) QuickAlloc(online gzkwrapper.NodesPair, offline gzkw
 		return
 	}
 
-	if scheduler.allocMode == "pref" {
+	if scheduler.AllocMode == "pref" {
 		for location, nodes := range nodesMapper {
 			logger.INFO("[#scheduler#] pref alloc %s.", location)
 			scheduler.PrefAlloc(location, nodes)
@@ -91,13 +96,13 @@ func (scheduler *Scheduler) QuickAlloc(online gzkwrapper.NodesPair, offline gzkw
 //以job为条件进行分配，当创建或删除Job时调度器会立即分配
 func (scheduler *Scheduler) SingleJobAlloc(location string, jobid string) {
 
-	logger.INFO("[#scheduler#] single alloc. %s", scheduler.allocMode)
-	if scheduler.allocMode == "hash" {
+	logger.INFO("[#scheduler#] single alloc. %s", scheduler.AllocMode)
+	if scheduler.AllocMode == "hash" {
 		scheduler.HashSingleJobAlloc(location, jobid)
 		return
 	}
 
-	if scheduler.allocMode == "pref" {
+	if scheduler.AllocMode == "pref" {
 		scheduler.PrefSingleJobAlloc(location, jobid)
 		return
 	}

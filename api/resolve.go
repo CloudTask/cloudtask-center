@@ -85,6 +85,23 @@ func ResolveMessageRequest(c *Context) *MessageRequest {
 	}
 }
 
+//ResloveJogRequest is exported
+func ResloveJogRequest(c *Context) *JobLogRequest {
+
+	buf, err := ioutil.ReadAll(c.Request().Body)
+	if err != nil {
+		return nil
+	}
+
+	request := &JobLogRequest{}
+	if err := json.NewDecoder(bytes.NewReader(buf)).Decode(request); err != nil {
+		return nil
+	}
+
+	request.Context = c
+	return request
+}
+
 //ResolveRemoveRuntimeRequest is exported
 func ResolveRemoveRuntimeRequest(c *Context) string {
 

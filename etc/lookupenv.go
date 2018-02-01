@@ -56,11 +56,6 @@ func (conf *Configuration) parseEnv() error {
 
 func parseClusterEnv(conf *Configuration) error {
 
-	clusterDataCenter := os.Getenv("CLOUDTASK_CLUSTER_DATACENTER")
-	if clusterDataCenter != "" {
-		conf.Cluster.DataCenter = clusterDataCenter
-	}
-
 	if clusterHosts := os.Getenv("CLOUDTASK_CLUSTER_HOSTS"); clusterHosts != "" {
 		conf.Cluster.Hosts = clusterHosts
 	}
@@ -144,14 +139,6 @@ func parseCacheEnv(conf *Configuration) error {
 			return fmt.Errorf("CLOUDTASK_CACHE_LRUSIZE invalid, %s", err.Error())
 		}
 		conf.Cache.LRUSize = value
-	}
-
-	if cacheCloudPageSize := os.Getenv("CLOUDTASK_CACHE_CLOUDPAGESIZE"); cacheCloudPageSize != "" {
-		value, err := strconv.Atoi(cacheCloudPageSize)
-		if err != nil {
-			return fmt.Errorf("CLOUDTASK_CACHE_CLOUDPAGESIZE invalid, %s", err.Error())
-		}
-		conf.Cache.CloudPageSize = value
 	}
 	return nil
 }

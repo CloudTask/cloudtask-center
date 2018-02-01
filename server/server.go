@@ -1,6 +1,5 @@
 package server
 
-import "github.com/cloudtask/cloudtask-center/api"
 import "github.com/cloudtask/cloudtask-center/cache"
 import "github.com/cloudtask/cloudtask-center/etc"
 import "github.com/cloudtask/cloudtask-center/notify"
@@ -10,16 +9,14 @@ import "github.com/cloudtask/libtools/gzkwrapper"
 import "github.com/cloudtask/libtools/gounits/logger"
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
 
 //CenterServer is exported
 type CenterServer struct {
-	gzkwrapper.INodeNotifyHandler
-	cache.ICacheRepositoryHandler
 	Key             string
-	ConfigPath      string
 	Data            *gzkwrapper.NodeData
 	Master          *gzkwrapper.Server
 	NotifySender    *notify.NotifySender
@@ -27,28 +24,48 @@ type CenterServer struct {
 	Scheduler       *scheduler.Scheduler
 	MessageCache    *models.MessageCache
 	stopCh          chan struct{}
+	gzkwrapper.INodeNotifyHandler
+	cache.ICacheRepositoryHandler
 }
 
 //NewCenterServer is exported
 func NewCenterServer(key string) (*CenterServer, error) {
 
-	clusterArgs := etc.ClusterArgs()
-	server := &CenterServer{
-		Key:        key,
-		ConfigPath: clusterArgs.Root + "/ServerConfigs",
-		stopCh:     make(chan struct{}),
+	clusterConfigs := etc.ClusterConfigs()
+	if clusterConfigs == nil {
+		return nil, fmt.Errorf("cluster configs invalid.")
 	}
 
-	master, err := gzkwrapper.NewServer(key, clusterArgs, server)
+	cacheConfigs := etc.CacheConfigs()
+	if cacheConfigs == nil {
+		return nil, fmt.Errorf("cache configs invalid.")
+	}
+
+	schedulerConfigs := etc.SchedulerConfigs()
+	if schedulerConfigs == nil {
+		return nil, fmt.Errorf("scheduler configs invalid.")
+	}
+
+	server := &CenterServer{
+		Key:    key,
+		stopCh: make(chan struct{}),
+	}
+
+	master, err := gzkwrapper.NewServer(key, clusterConfigs, server)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheRepository, err := cache.NewCacheRepository(cacheConfigs, server)
 	if err != nil {
 		return nil, err
 	}
 
 	server.Master = master
 	server.Data = master.Data
-	server.NotifySender = notify.NewNotifySender(etc.GetNotifications())
-	server.CacheRepository = cache.NewCacheRepository(etc.GetCacheRepositoryArgs(), etc.ServerConfig, server)
-	server.Scheduler = scheduler.NewScheduler(etc.AllocMode(), server.CacheRepository)
+	server.CacheRepository = cacheRepository
+	server.NotifySender = notify.NewNotifySender(etc.Notifications())
+	server.Scheduler = scheduler.NewScheduler(schedulerConfigs, server.CacheRepository)
 	server.MessageCache = models.NewMessageCache()
 	return server, nil
 }
@@ -63,7 +80,7 @@ func (server *CenterServer) Startup(startCh chan<- bool) error {
 			return
 		}
 
-		recoveryInterval, err := time.ParseDuration(etc.AllocRecovery())
+		recoveryInterval, err := time.ParseDuration(server.Scheduler.AllocRecovery)
 		if err != nil {
 			recoveryInterval, _ = time.ParseDuration("320s")
 		}
@@ -74,12 +91,12 @@ func (server *CenterServer) Startup(startCh chan<- bool) error {
 	}()
 
 	if err = server.Master.Open(); err != nil {
-		logger.ERROR("[#server#] master open error, %s", err)
+		logger.ERROR("[#server#] cluster zookeeper open failure, %s", err)
 		return err
 	}
 
-	if err = server.initServerConfig(); err != nil {
-		logger.ERROR("[#server#] init server config error, %s", err)
+	if err = server.CacheRepository.Open(); err != nil {
+		logger.ERROR("[#server] storage driver open failure, %s", err)
 		return err
 	}
 
@@ -94,50 +111,13 @@ func (server *CenterServer) Startup(startCh chan<- bool) error {
 func (server *CenterServer) Stop() error {
 
 	close(server.stopCh)
+	server.CacheRepository.Close()
 	server.CacheRepository.Clear()
-	server.closeServerConfig()
 	server.Master.Clear()
 	if err := server.Master.Close(); err != nil {
-		logger.ERROR("[#server] master close error, %s", err.Error())
+		logger.ERROR("[#server] cluster zookeeper close error, %s", err.Error())
 		return err
 	}
-	return nil
-}
-
-//initServerConfig is exported
-//initialize server congfigs and watching zk config path.
-func (server *CenterServer) initServerConfig() error {
-
-	//watch server config path.
-	if err := server.Master.WatchOpen(server.ConfigPath, server.OnSeverConfigsWatchHandlerFunc); err != nil {
-		return err
-	}
-
-	//read config data.
-	data, err := server.Master.Get(server.ConfigPath)
-	if err != nil {
-		return err
-	}
-	//save data to etc serverConfig.
-	return server.RefreshServerConfig(data)
-}
-
-//closeServerConfig is exported
-func (server *CenterServer) closeServerConfig() {
-
-	server.Master.WatchClose(server.ConfigPath)
-}
-
-//RefreshServerConfig is exported
-//save serverConfig, re-set to references objects.
-func (server *CenterServer) RefreshServerConfig(data []byte) error {
-
-	if err := etc.SaveServerConfig(data); err != nil {
-		return err
-	}
-
-	api.RegisterStore("ServerConfig", etc.ServerConfig)
-	server.CacheRepository.SetServerConfig(etc.ServerConfig)
 	return nil
 }
 
