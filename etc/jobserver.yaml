@@ -1,4 +1,4 @@
-version: v.2.3.2.1
+version: v.2.5.0
 pidfile: ./jobserver.pid
 retrystartup: true
 cluster:
@@ -19,9 +19,6 @@ cache:
       mongo:
         hosts: mongodb://192.168.2.80:27017,192.168.2.81:27017,192.168.2.82:27017/cloudtask_dev?replicaSet=mgoCluster&maxPoolSize=20
         database: cloudtask_dev
-      #ngcloud:
-      #  apiurl: http://apis.newegg.org/datastore/v1/cloudtask_dev
-      #  readpagesize: 512
 notifications:
     endpoints:
       - name: smtp
@@ -30,7 +27,7 @@ notifications:
         user: abc
         password: 123456
         sender: abc@.example.com
-        enabled: true  
+        enabled: false
 logger:
     logfile: ./logs/jobserver.log
     loglevel: info

@@ -442,7 +442,7 @@ func (cacheRepository *CacheRepository) SetJobState(jobid string, state int) {
 func (cacheRepository *CacheRepository) SetJobLog(joblog *models.JobLog) {
 
 	logger.INFO("[#cache#] set job log, %s %d", joblog.JobId, joblog.Stat)
-	cacheRepository.SetJobLog(joblog)
+	cacheRepository.storageDriver.SetJobLog(joblog)
 }
 
 //SetJobExecute is exported
