@@ -15,11 +15,15 @@ const (
 	//LocationServersEvent is exported
 	//cluster discovery watch servers event
 	LocationServersEvent EventType = 1000
+	//JobNotifyEvent is exported
+	//job executed notify event
+	JobNotifyEvent EventType = 1001
 )
 
 //eventsTextMap is exported
 var eventsTextMap = map[EventType]string{
 	LocationServersEvent: "LocationServersEvent",
+	JobNotifyEvent:       "JobNotifyEvent",
 }
 
 //Event is exported
@@ -79,7 +83,7 @@ func (event *Event) makeSubjectText() string {
 
 	subjectPrefix := "(info)"
 	if event.Error != nil {
-		subjectPrefix = "(warn)"
+		subjectPrefix = "(error)"
 	}
 	return subjectPrefix + " CloudTask Notification"
 }

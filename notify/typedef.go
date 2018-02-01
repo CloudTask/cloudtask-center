@@ -60,3 +60,23 @@ func (location *WatchLocation) AddContactInfo(value string) {
 	}
 	location.ContactInfo = append(location.ContactInfo, value)
 }
+
+//JobResult is exported
+type JobResult struct {
+	JobName    string
+	Location   string
+	Server     string
+	Execat     string
+	IsSuccessd bool
+	Content    string
+	Stdout     string
+	Errout     string
+	Execerr    string
+}
+
+//WatchJobNotify is exported
+type WatchJobNotify struct {
+	Name        string
+	ContactInfo []string
+	JobResult
+}

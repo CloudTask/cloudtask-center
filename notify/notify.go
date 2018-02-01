@@ -8,7 +8,10 @@ import (
 )
 
 //notify template string
-var templateBody string
+var (
+	LocationServersNotifyBody string
+	JobResultNotifyBody       string
+)
 
 //NotifySender is exported
 type NotifySender struct {
@@ -18,6 +21,22 @@ type NotifySender struct {
 	events    map[string]*Event
 }
 
+func init() {
+
+	var (
+		buf []byte
+		err error
+	)
+
+	if buf, err = ioutil.ReadFile("./notify/templates/location.html"); err == nil {
+		LocationServersNotifyBody = string(buf)
+	}
+
+	if buf, err = ioutil.ReadFile("./notify/templates/job.html"); err == nil {
+		JobResultNotifyBody = string(buf)
+	}
+}
+
 //NewNotifySender is exported
 func NewNotifySender(endPoints []EndPoint) *NotifySender {
 
@@ -25,10 +44,6 @@ func NewNotifySender(endPoints []EndPoint) *NotifySender {
 		initWatch: true,
 		endPoints: []IEndPoint{},
 		events:    make(map[string]*Event),
-	}
-
-	if buf, err := ioutil.ReadFile("./notify/template.html"); err == nil {
-		templateBody = string(buf)
 	}
 
 	factory := &NotifyEndPointFactory{}
@@ -63,6 +78,17 @@ func (sender *NotifySender) AddLocationServersEvent(description string, watchLoc
 	sender.Unlock()
 }
 
+//AddJobNotifyEvent is exported
+func (sender *NotifySender) AddJobNotifyEvent(description string, watchJobNotify *WatchJobNotify) {
+
+	event := NewEvent(JobNotifyEvent, description, nil, watchJobNotify.ContactInfo, sender.endPoints)
+	event.data["WatchJobNotify"] = watchJobNotify
+	sender.Lock()
+	sender.events[event.ID] = event
+	go sender.dispatchEvents()
+	sender.Unlock()
+}
+
 //dispatchEvents is exported
 //dispatch all events.
 func (sender *NotifySender) dispatchEvents() {
@@ -77,7 +103,10 @@ func (sender *NotifySender) dispatchEvents() {
 			for _, event := range sender.events {
 				wgroup.Add(1)
 				go func(e *Event) {
-					e.dispatch(templateBody)
+					templateBody := getNotifyTemplateBody(e.Type)
+					if templateBody != "" {
+						e.dispatch(templateBody)
+					}
 					wgroup.Done()
 				}(event)
 			}
@@ -88,4 +117,14 @@ func (sender *NotifySender) dispatchEvents() {
 		}
 	}
 	sender.Unlock()
+}
+
+func getNotifyTemplateBody(evt EventType) string {
+
+	if evt == LocationServersEvent {
+		return LocationServersNotifyBody
+	} else if evt == JobNotifyEvent {
+		return JobResultNotifyBody
+	}
+	return ""
 }

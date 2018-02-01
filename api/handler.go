@@ -1,6 +1,7 @@
 package api
 
 import "github.com/cloudtask/cloudtask-center/cache"
+import "github.com/cloudtask/cloudtask-center/notify"
 import "github.com/cloudtask/common/models"
 
 import (
@@ -34,16 +35,15 @@ func getJobBase(c *Context) error {
 	encoder.Write([]byte(job.FileName))
 	fileCode := hex.EncodeToString(encoder.Sum(nil))
 	jobBase := &models.JobBase{
-		JobId:         job.JobId,
-		JobName:       job.Name,
-		FileName:      job.FileName,
-		FileCode:      fileCode,
-		Cmd:           job.Cmd,
-		Env:           job.Env,
-		Timeout:       job.Timeout,
-		Version:       version,
-		Schedule:      job.Schedule,
-		NotifySetting: job.NotifySetting,
+		JobId:    job.JobId,
+		JobName:  job.Name,
+		FileName: job.FileName,
+		FileCode: fileCode,
+		Cmd:      job.Cmd,
+		Env:      job.Env,
+		Timeout:  job.Timeout,
+		Version:  version,
+		Schedule: job.Schedule,
 	}
 	return c.JSON(http.StatusOK, jobBase)
 }
@@ -136,6 +136,42 @@ func postLogs(c *Context) error {
 	}
 	cacheRepository := c.Get("CacheRepository").(*cache.CacheRepository)
 	cacheRepository.SetJobLog(&request.JobLog)
+	job := cacheRepository.GetJob(request.JobId)
+	if job != nil && job.NotifySetting != nil {
+		var notifyOpt *models.Notify
+		var isSuccessd bool
+		switch request.JobLog.Stat {
+		case models.STATE_STOPED:
+			notifyOpt = &job.NotifySetting.Succeed
+			isSuccessd = true
+		case models.STATE_FAILED:
+			notifyOpt = &job.NotifySetting.Failed
+			isSuccessd = false
+		}
+
+		if notifyOpt != nil && notifyOpt.Enabled {
+			var execAt string
+			if !request.JobLog.ExecAt.IsZero() {
+				execAt = request.JobLog.ExecAt.String()
+			}
+			watchJobNotify := &notify.WatchJobNotify{
+				ContactInfo: []string{notifyOpt.To},
+				JobResult: notify.JobResult{
+					JobName:    job.Name,
+					Location:   job.Location,
+					Server:     request.JobLog.IpAddr,
+					Execat:     execAt,
+					IsSuccessd: isSuccessd,
+					Content:    notifyOpt.Content,
+					Stdout:     request.JobLog.StdOut,
+					Errout:     request.JobLog.ErrOut,
+					Execerr:    request.JobLog.ExecErr,
+				},
+			}
+			notifySender := c.Get("NotifySender").(*notify.NotifySender)
+			notifySender.AddJobNotifyEvent("job notify.", watchJobNotify)
+		}
+	}
 	response.SetContent(ErrRequestAccepted.Error())
 	return c.JSON(http.StatusAccepted, response)
 }

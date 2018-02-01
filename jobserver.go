@@ -72,6 +72,7 @@ func NewJobServer() (*JobServer, error) {
 	api.RegisterStore("CacheRepository", centerServer.CacheRepository)
 	api.RegisterStore("Scheduler", centerServer.Scheduler)
 	api.RegisterStore("MessageCache", centerServer.MessageCache)
+	api.RegisterStore("NotifySender", centerServer.NotifySender)
 	apiServer := api.NewServer(etc.SystemConfig.API.Hosts, etc.SystemConfig.API.EnableCors, nil)
 
 	return &JobServer{
