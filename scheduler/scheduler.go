@@ -115,7 +115,7 @@ func (scheduler *Scheduler) SingleJobAlloc(location string, jobid string) {
 //2、已存在，则检测分配的节点是否已发生改变，若改变则重新再分配.
 func (scheduler *Scheduler) RecoveryLocationAlloc(location string, jobs []*models.SimpleJob) {
 
-	logger.INFO("[#scheduler#] recovery %s alloc.", location)
+	//logger.INFO("[#scheduler#] recovery %s alloc.", location)
 	jobKeys := make(map[string]string, 0)
 	for _, job := range jobs {
 		if job.Enabled == 1 {

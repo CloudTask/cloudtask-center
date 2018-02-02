@@ -1,9 +1,9 @@
-version: v.2.5.0
+version: v.2.0.0
 pidfile: ./jobserver.pid
 retrystartup: true
 cluster:
   hosts: 192.168.2.80:2181,192.168.2.81:2181,192.168.2.82:2181
-  root: /cloudtask_dev
+  root: /cloudtask
   pulse: 30s
   timeout: 60s
   threshold: 1
@@ -11,23 +11,32 @@ api:
   hosts: [":8985"]
   enablecors: true
 scheduler:
-  allocmode: hash #pref
+  allocmode: hash
   allocrecovery: 320s
 cache:
   lrusize: 1024
   storage:
       mongo:
-        hosts: mongodb://192.168.2.80:27017,192.168.2.81:27017,192.168.2.82:27017/cloudtask_dev?replicaSet=mgoCluster&maxPoolSize=20
-        database: cloudtask_dev
+        hosts: 192.168.2.80:27017,192.168.2.81:27017,192.168.2.82:27017
+        database: cloudtask
+        #auth: {
+        #  user: datastoreAdmin,
+        #  password: ds4dev
+        #}
+        options: [
+          "maxPoolSize=20"
+          "replicaSet=mgoCluster",
+		      #"authSource=admin",
+        ]
 notifications:
     endpoints:
       - name: smtp
         host: smtp.example.com
-        port: 456
-        user: abc
-        password: 123456
-        sender: abc@.example.com
-        enabled: false
+        port: 25
+        user: 
+        password: 
+        sender: cloudtask@example.com
+        enabled: true
 logger:
     logfile: ./logs/jobserver.log
     loglevel: info

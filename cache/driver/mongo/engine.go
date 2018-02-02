@@ -2,11 +2,17 @@ package mongo
 
 import "github.com/cloudtask/cloudtask-center/cache/driver/types"
 import "github.com/cloudtask/common/models"
+import "github.com/cloudtask/libtools/gounits/system"
 import "gopkg.in/mgo.v2/bson"
 import mgo "gopkg.in/mgo.v2"
 
 import (
+	"strings"
 	"time"
+)
+
+const (
+	defaultMaxPoolSize = 20
 )
 
 const (
@@ -19,47 +25,100 @@ type M bson.M
 
 type D bson.D
 
+//MgoConfigs is exported
+type MgoConfigs struct {
+	Hosts    string
+	DataBase string
+	Auth     map[string]string
+	Options  []string
+}
+
 //Engine is exported
 type Engine struct {
-	Hosts          string
-	DBName         string
-	User           string
-	Password       string
-	MaxPoolSize    int
+	MgoConfigs
 	globalSession  *mgo.Session
 	failPulseTimes int
 	stopCh         chan struct{}
 }
 
 //NewEngine is exported
-func NewEngine(hosts string, dbName string, maxPoolSize int, user string, password string) *Engine {
+func NewEngine(configs MgoConfigs) *Engine {
 
 	return &Engine{
-		Hosts:       hosts,
-		DBName:      dbName,
-		User:        user,
-		Password:    password,
-		MaxPoolSize: maxPoolSize,
-		stopCh:      make(chan struct{}),
+		MgoConfigs: configs,
+		stopCh:     make(chan struct{}),
 	}
+}
+
+func generateHostURL(configs MgoConfigs) (string, error) {
+
+	configs.Hosts = strings.TrimSpace(configs.Hosts)
+	if len(configs.Hosts) == 0 {
+		return "", ErrMongoStorageDriverHostsInvalid
+	}
+
+	configs.DataBase = strings.TrimSpace(configs.DataBase)
+	if len(configs.DataBase) == 0 {
+		return "", ErrMongoStorageDriverDataBaseInvalid
+	}
+
+	var authStr string
+	if len(configs.Auth) > 0 {
+		var (
+			user, password string
+			ret            bool
+		)
+		if user, ret = configs.Auth["user"]; ret {
+			authStr = user
+			if password, ret = configs.Auth["password"]; ret {
+				authStr = authStr + ":" + password
+			}
+			authStr = authStr + "@"
+		}
+	}
+
+	var optsStr string
+	if len(configs.Options) > 0 {
+		for index, value := range configs.Options {
+			optsStr = optsStr + value
+			if index != len(configs.Options)-1 {
+				optsStr = optsStr + "&"
+			}
+		}
+	}
+
+	mgoURL := "mongodb://" + authStr + configs.Hosts + "/" + configs.DataBase
+	if optsStr != "" {
+		mgoURL = mgoURL + "?" + optsStr
+	}
+
+	if _, err := mgo.ParseURL(mgoURL); err != nil {
+		return "", err
+	}
+	return mgoURL, nil
 }
 
 //Open is exported
 func (engine *Engine) Open() error {
 
-	session, err := mgo.Dial(engine.Hosts)
+	var maxPoolSize = defaultMaxPoolSize
+	opts := system.DriverOpts(engine.Options)
+	if value, ret := opts.Int("maxPoolSize", ""); ret {
+		maxPoolSize = (int)(value)
+	}
+
+	mgoURL, err := generateHostURL(engine.MgoConfigs)
+	if err != nil {
+		return err
+	}
+
+	session, err := mgo.Dial(mgoURL)
 	if err != nil {
 		return err
 	}
 
 	session.SetMode(mgo.Strong, true)
-	session.SetPoolLimit(engine.MaxPoolSize)
-	database := session.DB(engine.DBName)
-	if engine.User != "" {
-		if err := database.Login(engine.User, engine.Password); err != nil {
-			return err
-		}
-	}
+	session.SetPoolLimit(maxPoolSize)
 	engine.globalSession = session
 	go engine.pulseSessionLoop()
 	return nil
@@ -79,7 +138,7 @@ func (engine *Engine) getLocation(location string) (*models.WorkLocation, error)
 	session := engine.getSession()
 	defer session.Close()
 	workLocation := &models.WorkLocation{}
-	if err := session.DB(engine.DBName).C(SYS_LOCATIONNS).
+	if err := session.DB(engine.DataBase).C(SYS_LOCATIONNS).
 		Find(M{"location": location}).
 		Select(M{"_id": 0}).One(workLocation); err != nil {
 		if err == mgo.ErrNotFound {
@@ -94,7 +153,7 @@ func (engine *Engine) postLocation(workLocation *models.WorkLocation) error {
 
 	session := engine.getSession()
 	defer session.Close()
-	return session.DB(engine.DBName).C(SYS_LOCATIONNS).
+	return session.DB(engine.DataBase).C(SYS_LOCATIONNS).
 		Insert(workLocation)
 }
 
@@ -102,7 +161,7 @@ func (engine *Engine) putLocation(workLocation *models.WorkLocation) error {
 
 	session := engine.getSession()
 	defer session.Close()
-	return session.DB(engine.DBName).C(SYS_LOCATIONNS).
+	return session.DB(engine.DataBase).C(SYS_LOCATIONNS).
 		Update(M{"location": workLocation.Location}, workLocation)
 }
 
@@ -111,7 +170,7 @@ func (engine *Engine) readLocationsName() ([]string, error) {
 	session := engine.getSession()
 	defer session.Close()
 	workLocations := []*models.WorkLocation{}
-	if err := session.DB(engine.DBName).C(SYS_LOCATIONNS).
+	if err := session.DB(engine.DataBase).C(SYS_LOCATIONNS).
 		Find(M{}).
 		Select(M{"_id": 0, "location": 1}).
 		All(&workLocations); err != nil {
@@ -130,7 +189,7 @@ func (engine *Engine) readSimpleJobs(query M) ([]*models.SimpleJob, error) {
 	session := engine.getSession()
 	defer session.Close()
 	jobs := []*models.SimpleJob{}
-	if err := session.DB(engine.DBName).C(SYS_JOBS).
+	if err := session.DB(engine.DataBase).C(SYS_JOBS).
 		Find(query).
 		Select(M{"_id": 0, "jobid": 1, "name": 1, "location": 1, "groupid": 1, "servers": 1, "enabled": 1, "stat": 1}).
 		All(&jobs); err != nil {
@@ -144,7 +203,7 @@ func (engine *Engine) readJobs(query M) ([]*models.Job, error) {
 	session := engine.getSession()
 	defer session.Close()
 	jobs := []*models.Job{}
-	if err := session.DB(engine.DBName).C(SYS_JOBS).
+	if err := session.DB(engine.DataBase).C(SYS_JOBS).
 		Find(query).
 		Select(M{"_id": 0}).
 		All(&jobs); err != nil {
@@ -176,7 +235,7 @@ func (engine *Engine) getJob(jobid string) (*models.Job, error) {
 	session := engine.getSession()
 	defer session.Close()
 	job := &models.Job{}
-	if err := session.DB(engine.DBName).C(SYS_JOBS).
+	if err := session.DB(engine.DataBase).C(SYS_JOBS).
 		Find(M{"jobid": jobid}).
 		Select(M{"_id": 0}).One(job); err != nil {
 		if err == mgo.ErrNotFound {
@@ -191,7 +250,7 @@ func (engine *Engine) putJob(job *models.Job) error {
 
 	session := engine.getSession()
 	defer session.Close()
-	return session.DB(engine.DBName).C(SYS_JOBS).
+	return session.DB(engine.DataBase).C(SYS_JOBS).
 		Update(M{"jobid": job.JobId}, job)
 }
 
@@ -199,7 +258,7 @@ func (engine *Engine) postJobLog(jobLog *models.JobLog) error {
 
 	session := engine.getSession()
 	defer session.Close()
-	return session.DB(engine.DBName).C(SYS_LOGS).
+	return session.DB(engine.DataBase).C(SYS_LOGS).
 		Insert(jobLog)
 }
 

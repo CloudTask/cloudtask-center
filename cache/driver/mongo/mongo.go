@@ -7,14 +7,7 @@ import "github.com/cloudtask/libtools/gounits/logger"
 
 import (
 	"errors"
-	"net/url"
-	"path"
-	"strconv"
 	"sync"
-)
-
-const (
-	defaultMaxPoolSize = 20
 )
 
 var (
@@ -37,58 +30,48 @@ func init() {
 func New(parameters types.Parameters) (driver.StorageDriver, error) {
 
 	var (
-		value       interface{}
-		ret         bool
-		rawHosts    string
-		dbName      string
-		user        string
-		password    string
-		maxPoolSize int
+		ret   bool
+		value interface{}
 	)
+
+	mgoConfigs := MgoConfigs{
+		Auth:    map[string]string{},
+		Options: []string{},
+	}
 
 	value, ret = parameters["hosts"]
 	if !ret {
 		return nil, ErrMongoStorageDriverHostsInvalid
 	}
-
-	pHosts, err := url.Parse(value.(string))
-	if err != nil {
-		return nil, ErrMongoStorageDriverHostsInvalid
-	}
-
-	scheme := pHosts.Scheme
-	if scheme == "" {
-		scheme = "mongodb"
-	}
-
-	maxPoolSize = defaultMaxPoolSize
-	queryPoolSize := pHosts.Query().Get("maxPoolSize")
-	if queryPoolSize != "" {
-		if pValue, err := strconv.Atoi(queryPoolSize); err == nil {
-			maxPoolSize = pValue
-		}
-	}
+	mgoConfigs.Hosts = value.(string)
 
 	value, ret = parameters["database"]
 	if !ret {
 		return nil, ErrMongoStorageDriverDataBaseInvalid
 	}
+	mgoConfigs.DataBase = value.(string)
 
-	if dbName = value.(string); dbName == "" {
-		return nil, ErrMongoStorageDriverDataBaseInvalid
+	if value, ret = parameters["auth"]; ret {
+		if auth, ok := value.(map[interface{}]interface{}); ok {
+			if user, ok := auth["user"]; ok {
+				mgoConfigs.Auth["user"] = user.(string)
+			}
+			if password, ok := auth["password"]; ok {
+				mgoConfigs.Auth["password"] = password.(string)
+			}
+		}
 	}
 
-	if value, ret = parameters["user"]; ret {
-		user = value.(string)
+	if value, ret = parameters["options"]; ret {
+		if options, ok := value.([]interface{}); ok {
+			for _, option := range options {
+				mgoConfigs.Options = append(mgoConfigs.Options, option.(string))
+			}
+		}
 	}
 
-	if value, ret = parameters["password"]; ret {
-		password = value.(string)
-	}
-
-	rawHosts = scheme + "://" + pHosts.Host + path.Clean(pHosts.Path) + "?" + pHosts.RawQuery
 	return &MongoStorageDriver{
-		engine: NewEngine(rawHosts, dbName, maxPoolSize, user, password),
+		engine: NewEngine(mgoConfigs),
 	}, nil
 }
 

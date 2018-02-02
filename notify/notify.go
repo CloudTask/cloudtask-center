@@ -101,14 +101,16 @@ func (sender *NotifySender) dispatchEvents() {
 		if !sender.initWatch {
 			wgroup := sync.WaitGroup{}
 			for _, event := range sender.events {
-				wgroup.Add(1)
-				go func(e *Event) {
-					templateBody := getNotifyTemplateBody(e.Type)
-					if templateBody != "" {
-						e.dispatch(templateBody)
-					}
-					wgroup.Done()
-				}(event)
+				if len(event.ContactInfo) > 0 {
+					wgroup.Add(1)
+					go func(e *Event) {
+						templateBody := getNotifyTemplateBody(e.Type)
+						if templateBody != "" {
+							e.dispatch(templateBody)
+						}
+						wgroup.Done()
+					}(event)
+				}
 			}
 			wgroup.Wait()
 		}
