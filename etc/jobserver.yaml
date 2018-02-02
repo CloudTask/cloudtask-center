@@ -24,9 +24,9 @@ cache:
         #  password: ds4dev
         #}
         options: [
-          "maxPoolSize=20"
+          "maxPoolSize=20",
           "replicaSet=mgoCluster",
-		      #"authSource=admin",
+		  #"authSource=admin"
         ]
 notifications:
     endpoints:
