@@ -408,21 +408,6 @@ func (cacheRepository *CacheRepository) SetJobAction(location string, jobid stri
 	}
 }
 
-//SetJobNextAt is exported
-func (cacheRepository *CacheRepository) SetJobNextAt(jobid string, nextat time.Time) {
-
-	logger.INFO("[#cache#] set job nextat, %s %s", jobid, nextat)
-	job := cacheRepository.GetJob(jobid)
-	if job != nil {
-		if len(job.Schedule) > 0 {
-			job.Stat = models.STATE_STOPED
-			job.NextAt = nextat
-			logger.INFO("[#cache#] set job %s nextat to %s, execat %s, state %d", jobid, job.NextAt, job.ExecAt, job.Stat)
-			cacheRepository.storageDriver.SetJob(job)
-		}
-	}
-}
-
 //SetJobState is exported
 func (cacheRepository *CacheRepository) SetJobState(jobid string, state int) {
 
@@ -438,11 +423,19 @@ func (cacheRepository *CacheRepository) SetJobState(jobid string, state int) {
 	}
 }
 
-//SetJobLog is exported
-func (cacheRepository *CacheRepository) SetJobLog(joblog *models.JobLog) {
+//SetJobNextAt is exported
+func (cacheRepository *CacheRepository) SetJobNextAt(jobid string, nextat time.Time) {
 
-	logger.INFO("[#cache#] set job log, %s %d", joblog.JobId, joblog.Stat)
-	cacheRepository.storageDriver.SetJobLog(joblog)
+	logger.INFO("[#cache#] set job nextat, %s %s", jobid, nextat)
+	job := cacheRepository.GetJob(jobid)
+	if job != nil {
+		if len(job.Schedule) > 0 {
+			job.Stat = models.STATE_STOPED
+			job.NextAt = nextat
+			logger.INFO("[#cache#] set job %s nextat to %s, execat %s, state %d", jobid, job.NextAt, job.ExecAt, job.Stat)
+			cacheRepository.storageDriver.SetJob(job)
+		}
+	}
 }
 
 //SetJobExecute is exported
@@ -465,6 +458,13 @@ func (cacheRepository *CacheRepository) SetJobExecute(jobid string, state int, e
 		logger.INFO("[#cache#] set job %s execute to %d, nextat %s, execat %s", jobid, job.Stat, job.NextAt, job.ExecAt)
 		cacheRepository.storageDriver.SetJob(job)
 	}
+}
+
+//SetJobLog is exported
+func (cacheRepository *CacheRepository) SetJobLog(joblog *models.JobLog) {
+
+	logger.INFO("[#cache#] set job log, %s %d", joblog.JobId, joblog.Stat)
+	cacheRepository.storageDriver.SetJobLog(joblog)
 }
 
 //GetWorker is exported
