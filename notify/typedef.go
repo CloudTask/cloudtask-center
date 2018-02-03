@@ -64,6 +64,7 @@ func (location *WatchLocation) AddContactInfo(value string) {
 //JobResult is exported
 type JobResult struct {
 	JobName    string
+	Directory  string
 	Location   string
 	Server     string
 	Execat     string

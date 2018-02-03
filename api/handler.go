@@ -158,6 +158,7 @@ func postLogs(c *Context) error {
 				ContactInfo: []string{notifyOpt.To},
 				JobResult: notify.JobResult{
 					JobName:    job.Name,
+					Directory:  request.JobLog.WorkDir,
 					Location:   job.Location,
 					Server:     request.JobLog.IpAddr,
 					Execat:     execAt,
@@ -169,7 +170,7 @@ func postLogs(c *Context) error {
 				},
 			}
 			notifySender := c.Get("NotifySender").(*notify.NotifySender)
-			notifySender.AddJobNotifyEvent("job notify.", watchJobNotify)
+			notifySender.AddJobNotifyEvent("This Job Has Been Executed.", watchJobNotify)
 		}
 	}
 	response.SetContent(ErrRequestAccepted.Error())

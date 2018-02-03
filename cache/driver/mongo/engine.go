@@ -251,7 +251,11 @@ func (engine *Engine) putJob(job *models.Job) error {
 	session := engine.getSession()
 	defer session.Close()
 	return session.DB(engine.DataBase).C(SYS_JOBS).
-		Update(M{"jobid": job.JobId}, job)
+		Update(M{"jobid": job.JobId}, M{"$set": M{
+			"stat":    job.Stat,
+			"execerr": job.ExecErr,
+			"execat":  job.ExecAt,
+			"nextat":  job.NextAt}})
 }
 
 func (engine *Engine) postJobLog(jobLog *models.JobLog) error {
