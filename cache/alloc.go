@@ -7,16 +7,41 @@ import (
 	"sync"
 )
 
+//AllocEvent is exported
+type AllocEvent int
+
+const (
+	ALLOC_CREATED_EVENT AllocEvent = iota + 1
+	ALLOC_CHANGED_EVENT
+	ALLOC_REMOVED_EVENT
+)
+
+func (event AllocEvent) String() string {
+
+	switch event {
+	case ALLOC_CREATED_EVENT:
+		return "ALLOC_CREATED_EVENT"
+	case ALLOC_CHANGED_EVENT:
+		return "ALLOC_CHANGED_EVENT"
+	case ALLOC_REMOVED_EVENT:
+		return "ALLOC_REMOVED_EVENT"
+	}
+	return ""
+}
+
+//AllocCacheEventHandlerFunc is exported
+type AllocCacheEventHandlerFunc func(event AllocEvent, location string, data []byte, err error)
+
 //AllocStore is exported
 type AllocStore struct {
 	sync.RWMutex
 	allocPool *sync.Pool
 	tableData models.AllocMapper
-	ICacheRepositoryHandler
+	callback  AllocCacheEventHandlerFunc
 }
 
 //NewAllocStore is exported
-func NewAllocStore(handler ICacheRepositoryHandler) *AllocStore {
+func NewAllocStore(callback AllocCacheEventHandlerFunc) *AllocStore {
 
 	allocPool := &sync.Pool{
 		New: func() interface{} { //数据编码池,默认分配128K
@@ -25,9 +50,9 @@ func NewAllocStore(handler ICacheRepositoryHandler) *AllocStore {
 	}
 
 	return &AllocStore{
-		allocPool:               allocPool,
-		tableData:               make(models.AllocMapper, 0),
-		ICacheRepositoryHandler: handler,
+		allocPool: allocPool,
+		tableData: make(models.AllocMapper, 0),
+		callback:  callback,
 	}
 }
 
@@ -52,42 +77,6 @@ func (store *AllocStore) GetAlloc(location string) *models.JobsAlloc {
 		return jobsAlloc
 	}
 	return nil
-}
-
-//MakeAllocBuffer is exported
-//make empty alloc to buffer.
-func (store *AllocStore) MakeAllocBuffer() ([]byte, error) {
-
-	return models.JobsAllocEnCode(store.allocPool, &models.JobsAlloc{
-		Version: 0,
-		Jobs:    make([]*models.JobData, 0),
-	})
-}
-
-//SetAllocBuffer is exported
-func (store *AllocStore) SetAllocBuffer(location string, data []byte) error {
-
-	store.Lock()
-	defer store.Unlock()
-	jobsAlloc := &models.JobsAlloc{Version: 0, Jobs: make([]*models.JobData, 0)}
-	if err := models.JobsAllocDeCode(data, jobsAlloc); err != nil {
-		return err
-	}
-	store.tableData[location] = jobsAlloc
-	return nil
-}
-
-//ClearAllocBuffer is exported
-func (store *AllocStore) ClearAllocBuffer(location string) {
-
-	store.Lock()
-	defer store.Unlock()
-	if jobsAlloc, ret := store.tableData[location]; ret {
-		jobsAlloc.Jobs = []*models.JobData{}
-		jobsAlloc.Version = jobsAlloc.Version + 1
-		data, err := models.JobsAllocEnCode(store.allocPool, jobsAlloc)
-		store.OnAllocCacheChangedHandlerFunc(location, data, err)
-	}
 }
 
 //HasAlloc is exported
@@ -160,7 +149,7 @@ func (store *AllocStore) SetAllocJobsKey(location string, jobs map[string]string
 
 	jobsAlloc.Version = jobsAlloc.Version + 1
 	data, err := models.JobsAllocEnCode(store.allocPool, jobsAlloc)
-	store.OnAllocCacheChangedHandlerFunc(location, data, err)
+	store.callback(ALLOC_CHANGED_EVENT, location, data, err)
 }
 
 //GetAllocJob is exported
@@ -185,6 +174,7 @@ func (store *AllocStore) CreateAllocJob(location string, key string, jobId strin
 
 	store.Lock()
 	defer store.Unlock()
+	var allocEvent AllocEvent
 	jobsAlloc, ret := store.tableData[location]
 	if !ret {
 		jobsAlloc = &models.JobsAlloc{
@@ -198,6 +188,7 @@ func (store *AllocStore) CreateAllocJob(location string, key string, jobId strin
 			},
 		}
 		store.tableData[location] = jobsAlloc
+		allocEvent = ALLOC_CREATED_EVENT
 	} else {
 		found := false
 		for _, jobData := range jobsAlloc.Jobs {
@@ -214,10 +205,11 @@ func (store *AllocStore) CreateAllocJob(location string, key string, jobId strin
 				Version: 1})
 		}
 		jobsAlloc.Version = jobsAlloc.Version + 1
+		allocEvent = ALLOC_CHANGED_EVENT
 	}
 
 	data, err := models.JobsAllocEnCode(store.allocPool, jobsAlloc)
-	store.OnAllocCacheChangedHandlerFunc(location, data, err)
+	store.callback(allocEvent, location, data, err)
 }
 
 //UpdateAllocJobs is exported
@@ -246,7 +238,7 @@ func (store *AllocStore) UpdateAllocJobs(location string, jobIds []string) {
 
 	jobsAlloc.Version = jobsAlloc.Version + 1
 	data, err := models.JobsAllocEnCode(store.allocPool, jobsAlloc)
-	store.OnAllocCacheChangedHandlerFunc(location, data, err)
+	store.callback(ALLOC_CHANGED_EVENT, location, data, err)
 }
 
 //RemoveAllocJob is exported
@@ -269,7 +261,7 @@ func (store *AllocStore) RemoveAllocJob(location string, jobId string) {
 			jobsAlloc.Jobs = append(jobsAlloc.Jobs[:i], jobsAlloc.Jobs[i+1:]...)
 			jobsAlloc.Version = jobsAlloc.Version + 1
 			data, err := models.JobsAllocEnCode(store.allocPool, jobsAlloc)
-			store.OnAllocCacheChangedHandlerFunc(location, data, err)
+			store.callback(ALLOC_CHANGED_EVENT, location, data, err)
 			break
 		}
 	}
@@ -303,17 +295,35 @@ func (store *AllocStore) RemoveAllocJobs(location string, jobIds []string) {
 	if found {
 		jobsAlloc.Version = jobsAlloc.Version + 1
 		data, err := models.JobsAllocEnCode(store.allocPool, jobsAlloc)
-		store.OnAllocCacheChangedHandlerFunc(location, data, err)
+		store.callback(ALLOC_CHANGED_EVENT, location, data, err)
 	}
+}
+
+//CreateAlloc is exported
+func (store *AllocStore) CreateAlloc(location string, data []byte) {
+
+	store.Lock()
+	if _, ret := store.tableData[location]; !ret {
+		jobsAlloc := &models.JobsAlloc{}
+		var err error
+		if err = models.JobsAllocDeCode(data, jobsAlloc); err == nil {
+			store.tableData[location] = jobsAlloc
+		}
+		store.callback(ALLOC_CREATED_EVENT, location, data, err)
+	}
+	store.Unlock()
 }
 
 //RemoveAlloc is exported
 func (store *AllocStore) RemoveAlloc(location string) {
 
 	store.Lock()
-	if _, ret := store.tableData[location]; ret {
+	if jobsAlloc, ret := store.tableData[location]; ret {
 		delete(store.tableData, location)
-		store.OnAllocCacheLocationRemovedHandlerFunc(location)
+		jobsAlloc.Jobs = []*models.JobData{}
+		jobsAlloc.Version = jobsAlloc.Version + 1
+		data, err := models.JobsAllocEnCode(store.allocPool, jobsAlloc)
+		store.callback(ALLOC_REMOVED_EVENT, location, data, err)
 	}
 	store.Unlock()
 }

@@ -10,27 +10,30 @@ import (
 	"sync"
 )
 
-//EventType is exported
-type EventType int
+//NodeEvent is exported
+type NodeEvent int
 
 const (
-	CREATE_WORKER EventType = iota + 1
-	RELEASE_WORKER
-	CHANGE_WORKER
+	NODE_CREATED_EVENT NodeEvent = iota + 1
+	NODE_CHANGED_EVENT
+	NODE_REMOVED_EVENT
 )
 
-func (event EventType) String() string {
+func (event NodeEvent) String() string {
 
 	switch event {
-	case CREATE_WORKER:
-		return "CREATE_WORKER"
-	case RELEASE_WORKER:
-		return "RELEASE_WORKER"
-	case CHANGE_WORKER:
-		return "CHANGE_WORKER"
+	case NODE_CREATED_EVENT:
+		return "NODE_CREATED_EVENT"
+	case NODE_CHANGED_EVENT:
+		return "NODE_CHANGED_EVENT"
+	case NODE_REMOVED_EVENT:
+		return "NODE_REMOVED_EVENT"
 	}
 	return ""
 }
+
+//NodeCacheEventHandlerFunc is exported
+type NodeCacheEventHandlerFunc func(event NodeEvent, location string, worker *Worker)
 
 //Worker is exported
 type Worker struct {
@@ -44,16 +47,16 @@ type NodeStore struct {
 	sync.RWMutex
 	nodesData map[string][]*Worker
 	circle    map[string]*algorithm.Consistent
-	ICacheRepositoryHandler
+	callback  NodeCacheEventHandlerFunc
 }
 
 //NewNodeStore is exported
-func NewNodeStore(handler ICacheRepositoryHandler) *NodeStore {
+func NewNodeStore(callback NodeCacheEventHandlerFunc) *NodeStore {
 
 	return &NodeStore{
-		nodesData:               make(map[string][]*Worker, 0),
-		circle:                  make(map[string]*algorithm.Consistent, 0),
-		ICacheRepositoryHandler: handler,
+		nodesData: make(map[string][]*Worker, 0),
+		circle:    make(map[string]*algorithm.Consistent, 0),
+		callback:  callback,
 	}
 }
 
@@ -190,7 +193,7 @@ func (store *NodeStore) CreateWorker(location string, attach *models.AttachData,
 	}
 
 	if added {
-		store.OnNodeCacheChangedHandlerFunc(CREATE_WORKER, location, w)
+		store.callback(NODE_CREATED_EVENT, location, w)
 	}
 }
 
@@ -213,7 +216,7 @@ func (store *NodeStore) ChangeWorker(location string, attach *models.AttachData,
 			workers[i].Server = server
 			workers[i].AttachData = attach
 			store.nodesData[location] = workers
-			store.OnNodeCacheChangedHandlerFunc(CHANGE_WORKER, location, workers[i])
+			store.callback(NODE_CHANGED_EVENT, location, workers[i])
 			break
 		}
 	}
@@ -243,7 +246,7 @@ func (store *NodeStore) RemoveWorker(location string, key string) {
 			if len(store.circle[location].Members()) == 0 {
 				delete(store.circle, location)
 			}
-			store.OnNodeCacheChangedHandlerFunc(RELEASE_WORKER, location, workers[i])
+			store.callback(NODE_REMOVED_EVENT, location, workers[i])
 			break
 		}
 	}
@@ -253,8 +256,12 @@ func (store *NodeStore) RemoveWorker(location string, key string) {
 func (store *NodeStore) RemoveLocation(location string) {
 
 	store.Lock()
-	delete(store.nodesData, location)
-	delete(store.circle, location)
-	store.OnNodeCacheLocationRemovedHandlerFunc(location)
+	if workers, ret := store.nodesData[location]; ret {
+		delete(store.nodesData, location)
+		delete(store.circle, location)
+		for _, worker := range workers {
+			store.callback(NODE_REMOVED_EVENT, location, worker)
+		}
+	}
 	store.Unlock()
 }

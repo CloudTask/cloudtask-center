@@ -8,6 +8,7 @@ import "github.com/cloudtask/libtools/gounits/logger"
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 //ProcessSystemEventMessage is exported
@@ -20,6 +21,7 @@ func ProcessSystemEventMessage(request *MessageRequest) error {
 	}
 
 	cacheRepository := request.Context.Get("CacheRepository").(*cache.CacheRepository)
+	scheduler := request.Context.Get("Scheduler").(*scheduler.Scheduler)
 	switch systemEvent.Event {
 	case models.RemoveGroupEvent:
 		{ //只考虑删除组情况，创建和修改组不会对分配表造成改变.
@@ -33,7 +35,6 @@ func ProcessSystemEventMessage(request *MessageRequest) error {
 			if len(systemEvent.JobIds) > 0 {
 				jobId := systemEvent.JobIds[0]
 				if job := cacheRepository.GetRawJob(jobId); job != nil {
-					scheduler := request.Context.Get("Scheduler").(*scheduler.Scheduler)
 					scheduler.SingleJobAlloc(systemEvent.Runtime, jobId)
 				}
 			}
@@ -54,7 +55,6 @@ func ProcessSystemEventMessage(request *MessageRequest) error {
 				job := cacheRepository.GetRawJob(systemEvent.JobIds[0])
 				if job != nil {
 					if job.Enabled == 1 {
-						scheduler := request.Context.Get("Scheduler").(*scheduler.Scheduler)
 						jobData := cacheRepository.GetAllocJob(job.Location, job.JobId)
 						if jobData == nil {
 							scheduler.SingleJobAlloc(job.Location, job.JobId) //重新加入分配表
@@ -78,6 +78,36 @@ func ProcessSystemEventMessage(request *MessageRequest) error {
 				cacheRepository.GetRawJob(jobId)
 			}
 			cacheRepository.UpdateAllocJobs(systemEvent.Runtime, systemEvent.JobIds)
+		}
+	case models.CreateRuntimeEvent:
+		{
+			if strings.TrimSpace(systemEvent.Runtime) != "" {
+				logger.INFO("[#api#] ### %s, %+v", models.CreateRuntimeEvent, systemEvent)
+				workLocation := cacheRepository.GetLocation(systemEvent.Runtime)
+				if workLocation == nil {
+					cacheRepository.CreateLocationAlloc(systemEvent.Runtime)
+				}
+			}
+		}
+	case models.ChangeRuntimeEvent:
+		{
+			if strings.TrimSpace(systemEvent.Runtime) != "" {
+				logger.INFO("[#api#] ### %s, %+v", models.ChangeRuntimeEvent, systemEvent)
+				workLocation := cacheRepository.GetLocation(systemEvent.Runtime)
+				if workLocation != nil {
+					cacheRepository.ChangeLocationAlloc(systemEvent.Runtime)
+				}
+			}
+		}
+	case models.RemoveRuntimeEvent:
+		{
+			if strings.TrimSpace(systemEvent.Runtime) != "" {
+				logger.INFO("[#api#] ### %s, %+v", models.RemoveRuntimeEvent, systemEvent)
+				workLocation := cacheRepository.GetLocation(systemEvent.Runtime)
+				if workLocation != nil {
+					cacheRepository.RemoveLocationAlloc(systemEvent.Runtime)
+				}
+			}
 		}
 	}
 	return nil

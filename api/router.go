@@ -24,9 +24,6 @@ var routes = map[string]map[string]handler{
 	"PUT": {
 		"/cloudtask/v2/jobs/action": putJobAction,
 	},
-	"DELETE": {
-		"/cloudtask/v2/runtimes/{runtime}": deleteRuntime,
-	},
 }
 
 func NewRouter(enableCors bool, store Store) *mux.Router {

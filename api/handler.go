@@ -191,18 +191,3 @@ func putJobAction(c *Context) error {
 	response.SetContent(ErrRequestAccepted.Error())
 	return c.JSON(http.StatusAccepted, response)
 }
-
-func deleteRuntime(c *Context) error {
-
-	response := &ResponseImpl{}
-	runtime := ResolveRemoveRuntimeRequest(c)
-	if runtime == "" {
-		response.SetContent(ErrRequestResolveInvaild.Error())
-		return c.JSON(http.StatusBadRequest, response)
-	}
-
-	cacheRepository := c.Get("CacheRepository").(*cache.CacheRepository)
-	cacheRepository.RemoveLocation(runtime)
-	response.SetContent(ErrRequestAccepted.Error())
-	return c.JSON(http.StatusAccepted, response)
-}

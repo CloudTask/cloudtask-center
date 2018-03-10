@@ -101,14 +101,3 @@ func ResloveJogRequest(c *Context) *JobLogRequest {
 	request.Context = c
 	return request
 }
-
-//ResolveRemoveRuntimeRequest is exported
-func ResolveRemoveRuntimeRequest(c *Context) string {
-
-	vars := mux.Vars(c.request)
-	runtime := strings.TrimSpace(vars["runtime"])
-	if len(runtime) == 0 {
-		return ""
-	}
-	return runtime
-}

@@ -11,7 +11,6 @@ func (server *CenterServer) OnZkWrapperNodeHandlerFunc(nodestore *gzkwrapper.Nod
 	for key, nodedata := range nodestore.New {
 		logger.INFO("[#server#] %s node %s(%s) healthy.", nodedata.Location, key, nodedata.IpAddr)
 		server.CacheRepository.CreateWorker(key, nodedata)
-		server.CacheRepository.InitAllocBuffer(nodedata.Location, nil)
 	}
 
 	deadTotalSize := nodestore.DeadTotalSize()
@@ -37,30 +36,39 @@ func (server *CenterServer) OnZkWrapperNodeHandlerFunc(nodestore *gzkwrapper.Nod
 }
 
 func (server *CenterServer) OnZkWrapperPulseHandlerFunc(key string, nodedata *gzkwrapper.NodeData, err error) {
+	//中心服务器不实现心跳
 }
 
-func (server *CenterServer) OnAllocCacheChangedHandlerFunc(location string, data []byte, err error) {
+func (server *CenterServer) OnAllocCacheHandlerFunc(event cache.AllocEvent, location string, data []byte, err error) {
 
 	if err != nil {
-		logger.ERROR("[#server#] alloc cache changed handler error, %s", err)
+		logger.ERROR("[#server#] %s cache handler %s error, %s.", location, event.String(), err)
 		return
 	}
-	//logger.INFO("[#server#] alloc cache changed. %s %d", location, len(data))
-	server.postCacheAlloc(location, data)
+
+	if len(data) <= 0 {
+		logger.ERROR("[#server#] %s cache handler %s error, alloc data invalid.", location, event.String())
+		return
+	}
+
+	logger.INFO("[#server#] %s cache handler %s.", location, event.String())
+	switch event {
+	case cache.ALLOC_CREATED_EVENT:
+		{
+			server.postCacheAlloc(location, data)
+		}
+	case cache.ALLOC_CHANGED_EVENT:
+		{
+			server.putCacheAlloc(location, data)
+		}
+	case cache.ALLOC_REMOVED_EVENT:
+		{
+			server.putCacheAlloc(location, data)
+		}
+	}
 }
 
-func (server *CenterServer) OnAllocCacheLocationRemovedHandlerFunc(location string) {
+func (server *CenterServer) OnNodeCacheHandlerFunc(event cache.NodeEvent, location string, worker *cache.Worker) {
 
-	//logger.INFO("[#server#] alloc cache location %s removed.", location)
-	server.removeCacheAlloc(location)
-}
-
-func (server *CenterServer) OnNodeCacheChangedHandlerFunc(event cache.EventType, location string, worker *cache.Worker) {
-
-	//logger.INFO("[#server#] node cache changed, event %s, %s %s, ipaddr %s.", event.String(), location, worker.Key, worker.IPAddr)
-}
-
-func (server *CenterServer) OnNodeCacheLocationRemovedHandlerFunc(location string) {
-
-	//logger.INFO("[#server#] node cache location %s removed.", location)
+	logger.INFO("[#server#] cache handler %s %s, worker %s, %s(%s).", location, event.String(), worker.Key, worker.Name, worker.IPAddr)
 }

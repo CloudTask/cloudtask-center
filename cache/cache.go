@@ -5,39 +5,50 @@ import _ "github.com/cloudtask/cloudtask-center/cache/driver/ngcloud"
 import "github.com/cloudtask/cloudtask-center/cache/driver"
 import "github.com/cloudtask/cloudtask-center/cache/driver/types"
 import "github.com/cloudtask/common/models"
+import "github.com/cloudtask/libtools/gounits/httpx"
 import "github.com/cloudtask/libtools/gounits/logger"
 import "github.com/cloudtask/libtools/gzkwrapper"
-import "github.com/cloudtask/libtools/gounits/httpx"
-import lru "github.com/hashicorp/golang-lru"
 
 import (
+	"bytes"
+	"encoding/json"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
-const (
-	defaultLRUSize = 512
-)
+//ReadLocationAllocFunc is exported
+//read jobs alloc path real data.
+type ReadLocationAllocFunc func(location string) []byte
+
+//ProcLocationAllocFunc is exported
+type ProcLocationAllocFunc func(location string, addServers []*models.Server, delServers []*models.Server)
 
 //CacheConfigs is exported
 type CacheConfigs struct {
-	LRUSize           int
-	StorageBackend    types.Backend
-	StorageParameters types.Parameters
+	LRUSize               int
+	StorageBackend        types.Backend
+	StorageParameters     types.Parameters
+	AllocHandlerFunc      AllocCacheEventHandlerFunc
+	NodeHandlerFunc       NodeCacheEventHandlerFunc
+	ReadLocationAllocFunc ReadLocationAllocFunc
+	ProcLocationAllocFunc ProcLocationAllocFunc
 }
 
 //CacheRepository is expotred
 type CacheRepository struct {
-	jobsCache     *lru.Cache
-	nodeStore     *NodeStore
-	allocStore    *AllocStore
-	client        *httpx.HttpClient
-	storageDriver driver.StorageDriver
+	nodeStore             *NodeStore
+	allocStore            *AllocStore
+	localStorage          *LocalStorage
+	client                *httpx.HttpClient
+	storageDriver         driver.StorageDriver
+	readLocationAllocFunc ReadLocationAllocFunc
+	procLocationAllocFunc ProcLocationAllocFunc
 }
 
 //NewCacheRepository is expotred
-func NewCacheRepository(configs *CacheConfigs, handler ICacheRepositoryHandler) (*CacheRepository, error) {
+func NewCacheRepository(configs *CacheConfigs) (*CacheRepository, error) {
 
 	storageDriver, err := driver.NewDriver(configs.StorageBackend, configs.StorageParameters)
 	if err != nil {
@@ -45,7 +56,7 @@ func NewCacheRepository(configs *CacheConfigs, handler ICacheRepositoryHandler) 
 	}
 
 	if configs.LRUSize <= 0 {
-		configs.LRUSize = defaultLRUSize
+		configs.LRUSize = DefaultLRUSize
 	}
 
 	client := httpx.NewClient().
@@ -63,13 +74,14 @@ func NewCacheRepository(configs *CacheConfigs, handler ICacheRepositoryHandler) 
 			ExpectContinueTimeout: http.DefaultTransport.(*http.Transport).ExpectContinueTimeout,
 		})
 
-	jobsCache, _ := lru.New(configs.LRUSize)
 	return &CacheRepository{
-		jobsCache:     jobsCache,
-		nodeStore:     NewNodeStore(handler),
-		allocStore:    NewAllocStore(handler),
-		client:        client,
-		storageDriver: storageDriver,
+		nodeStore:             NewNodeStore(configs.NodeHandlerFunc),
+		allocStore:            NewAllocStore(configs.AllocHandlerFunc),
+		localStorage:          NewLocalStorage(configs.LRUSize),
+		client:                client,
+		storageDriver:         storageDriver,
+		readLocationAllocFunc: configs.ReadLocationAllocFunc,
+		procLocationAllocFunc: configs.ProcLocationAllocFunc,
 	}, nil
 }
 
@@ -90,40 +102,100 @@ func (cacheRepository *CacheRepository) Clear() {
 
 	cacheRepository.nodeStore.ClearWorkers()
 	cacheRepository.allocStore.ClearAlloc()
+	cacheRepository.localStorage.Clear()
 }
 
-//DumpCleanAlloc is exported
-func (cacheRepository *CacheRepository) DumpCleanAlloc(location string) {
+//SetLocalStorageLocation is exported
+func (cacheRepository *CacheRepository) setLocalStorageLocation(location string) {
 
-	jobsAlloc := cacheRepository.GetAlloc(location)
-	if jobsAlloc == nil {
-		return
+	workLocation := cacheRepository.storageDriver.GetLocation(location)
+	if workLocation != nil {
+		cacheRepository.localStorage.SetLocation(workLocation)
 	}
+}
 
-	var (
-		found  = false
-		jobIds = []string{}
-	)
+//RemoveLocalStorageLocation is exported
+func (cacheRepository *CacheRepository) removeLocalStorageLocation(location string) {
 
-	//将分配表存在而数据库不存在或关闭的任务从分配表删除
-	jobs := cacheRepository.GetLocationJobs(location)
-	for _, jobData := range jobsAlloc.Jobs {
-		for _, job := range jobs {
-			if job.JobId == jobData.JobId && job.Enabled == 1 {
-				found = true
-				break
+	cacheRepository.localStorage.RemoveLocation(location)
+}
+
+//InitLocalStorageLocations is exported
+func (cacheRepository *CacheRepository) InitLocalStorageLocations() {
+
+	cacheRepository.localStorage.Clear()
+	locationsName := cacheRepository.storageDriver.GetLocationsName()
+	for _, location := range locationsName {
+		if strings.TrimSpace(location) != "" {
+			cacheRepository.CreateLocationAlloc(location)
+		}
+	}
+}
+
+//readLocatinAlloc is exported
+func (cacheRepository *CacheRepository) readLocatinAlloc(location string) []byte {
+
+	data := cacheRepository.readLocationAllocFunc(location)
+	if data == nil {
+		jobsAlloc := &models.JobsAlloc{
+			Version: 1,
+			Jobs:    make([]*models.JobData, 0),
+		}
+		buffer := bytes.NewBuffer([]byte{})
+		if err := json.NewEncoder(buffer).Encode(jobsAlloc); err != nil {
+			return nil
+		}
+		data = buffer.Bytes()
+	}
+	return data
+}
+
+//CreateLocationAlloc is exported
+func (cacheRepository *CacheRepository) CreateLocationAlloc(location string) {
+
+	cacheRepository.setLocalStorageLocation(location)
+	workLocation := cacheRepository.localStorage.GetLocation(location)
+	if workLocation != nil {
+		if data := cacheRepository.readLocatinAlloc(location); data != nil {
+			cacheRepository.allocStore.CreateAlloc(location, data)
+			if cacheRepository.HasAlloc(location) {
+				cacheRepository.procLocationAllocFunc(location, workLocation.Server, []*models.Server{})
 			}
 		}
-		if !found {
-			cacheRepository.SetJobState(jobData.JobId, models.STATE_REALLOC)
-			jobIds = append(jobIds, jobData.JobId)
-		}
-		found = false
 	}
+}
 
-	if len(jobIds) > 0 {
-		cacheRepository.RemoveAllocJobs(location, jobIds)
+//ChangeLocationAlloc is exported
+func (cacheRepository *CacheRepository) ChangeLocationAlloc(location string) {
+
+	originServers := cacheRepository.GetLocationServers(location)
+	cacheRepository.setLocalStorageLocation(location)
+	workLocation := cacheRepository.localStorage.GetLocation(location)
+	if workLocation != nil {
+		addServers := []*models.Server{}
+		for _, server := range workLocation.Server {
+			if ret := containsServer(server, originServers); !ret {
+				addServers = append(addServers, server)
+			}
+		}
+		delServers := []*models.Server{}
+		for _, server := range originServers {
+			if ret := containsServer(server, workLocation.Server); !ret {
+				delServers = append(delServers, server)
+			}
+		}
+		if cacheRepository.HasAlloc(location) {
+			cacheRepository.procLocationAllocFunc(location, addServers, delServers)
+		}
 	}
+}
+
+//RemoveLocationAlloc is exported
+func (cacheRepository *CacheRepository) RemoveLocationAlloc(location string) {
+
+	cacheRepository.nodeStore.RemoveLocation(location)
+	cacheRepository.allocStore.RemoveAlloc(location)
+	cacheRepository.removeLocalStorageLocation(location)
 }
 
 //GetAllocData is exported
@@ -147,6 +219,7 @@ func (cacheRepository *CacheRepository) GetAllocData(location string) *models.Jo
 		jobDataInfo.Version = jobData.Version
 		if worker := cacheRepository.GetWorker(jobData.Key); worker != nil {
 			jobDataInfo.IpAddr = worker.IPAddr
+			jobDataInfo.HostName = worker.Name
 		}
 		if job := cacheRepository.GetSimpleJob(jobData.JobId); job != nil {
 			jobDataInfo.JobName = job.Name
@@ -154,39 +227,6 @@ func (cacheRepository *CacheRepository) GetAllocData(location string) *models.Jo
 		jobsAllocData.Data = append(jobsAllocData.Data, jobDataInfo)
 	}
 	return jobsAllocData
-}
-
-//MakeAllocBuffer is exported
-func (cacheRepository *CacheRepository) MakeAllocBuffer() ([]byte, error) {
-
-	return cacheRepository.allocStore.MakeAllocBuffer()
-}
-
-//ClearAllocBuffer is exported
-func (cacheRepository *CacheRepository) ClearAllocBuffer(location string) {
-
-	cacheRepository.allocStore.ClearAllocBuffer(location)
-}
-
-//InitAllocBuffer is exported
-func (cacheRepository *CacheRepository) InitAllocBuffer(location string, data []byte) {
-
-	jobsAlloc := cacheRepository.GetAlloc(location)
-	if jobsAlloc == nil {
-		if data == nil { //new make alloc buffer
-			data, _ = cacheRepository.MakeAllocBuffer()
-		}
-		//set alloc buffer to local.
-		cacheRepository.SetAllocBuffer(location, data)
-		//clear location alloc. wait node online begin re-alloc.
-		cacheRepository.ClearAllocBuffer(location)
-	}
-}
-
-//SetAllocBuffer is exported
-func (cacheRepository *CacheRepository) SetAllocBuffer(location string, data []byte) error {
-
-	return cacheRepository.allocStore.SetAllocBuffer(location, data)
 }
 
 //HasAlloc is exported
@@ -258,32 +298,31 @@ func (cacheRepository *CacheRepository) UpdateAllocJobs(location string, jobIds 
 //GetLocationsName is exported
 func (cacheRepository *CacheRepository) GetLocationsName() []string {
 
-	return cacheRepository.storageDriver.GetLocationsName()
+	return cacheRepository.localStorage.GetLocationsName()
+}
+
+//GetLocation is exported
+func (cacheRepository *CacheRepository) GetLocation(location string) *models.WorkLocation {
+
+	return cacheRepository.localStorage.GetLocation(location)
+}
+
+//GetLocationServers is exported
+func (cacheRepository *CacheRepository) GetLocationServers(location string) []*models.Server {
+
+	return cacheRepository.localStorage.GetLocationServers(location)
 }
 
 //GetLocationGroups is exported
 func (cacheRepository *CacheRepository) GetLocationGroups(location string) []*models.Group {
 
-	groups := []*models.Group{}
-	workLocation := cacheRepository.storageDriver.GetLocation(location)
-	if workLocation != nil {
-		groups = workLocation.Group
-	}
-	return groups
+	return cacheRepository.localStorage.GetLocationGroups(location)
 }
 
 //GetLocationGroup is exported
 func (cacheRepository *CacheRepository) GetLocationGroup(location string, groupid string) *models.Group {
 
-	workLocation := cacheRepository.storageDriver.GetLocation(location)
-	if workLocation != nil {
-		for _, group := range workLocation.Group {
-			if group.Id == groupid {
-				return group
-			}
-		}
-	}
-	return nil
+	return cacheRepository.localStorage.GetLocationGroup(location, groupid)
 }
 
 //GetLocationSimpleJobs is exported
@@ -298,52 +337,12 @@ func (cacheRepository *CacheRepository) GetSimpleJob(jobid string) *models.Simpl
 	return cacheRepository.storageDriver.GetSimpleJob(jobid)
 }
 
-//GetJobs is exported
-func (cacheRepository *CacheRepository) GetJobs() []*models.Job {
-
-	jobs := cacheRepository.storageDriver.GetJobs()
-	for _, job := range jobs {
-		cacheRepository.jobsCache.Add(job.JobId, job)
-	}
-	return jobs
-}
-
-//GetStateJobs is exported
-func (cacheRepository *CacheRepository) GetStateJobs(state int) []*models.Job {
-
-	jobs := cacheRepository.storageDriver.GetStateJobs(state)
-	for _, job := range jobs {
-		cacheRepository.jobsCache.Add(job.JobId, job)
-	}
-	return jobs
-}
-
-//GetLocationJobs is exported
-func (cacheRepository *CacheRepository) GetLocationJobs(location string) []*models.Job {
-
-	jobs := cacheRepository.storageDriver.GetLocationJobs(location)
-	for _, job := range jobs {
-		cacheRepository.jobsCache.Add(job.JobId, job)
-	}
-	return jobs
-}
-
-//GetGroupJobs is exported
-func (cacheRepository *CacheRepository) GetGroupJobs(groupid string) []*models.Job {
-
-	jobs := cacheRepository.storageDriver.GetGroupJobs(groupid)
-	for _, job := range jobs {
-		cacheRepository.jobsCache.Add(job.JobId, job)
-	}
-	return jobs
-}
-
 //GetRawJob is exported
 func (cacheRepository *CacheRepository) GetRawJob(jobid string) *models.Job {
 
 	job := cacheRepository.storageDriver.GetJob(jobid)
 	if job != nil {
-		cacheRepository.jobsCache.Add(job.JobId, job)
+		cacheRepository.localStorage.AddJob(job)
 	}
 	return job
 }
@@ -351,22 +350,17 @@ func (cacheRepository *CacheRepository) GetRawJob(jobid string) *models.Job {
 //GetJob is exported
 func (cacheRepository *CacheRepository) GetJob(jobid string) *models.Job {
 
-	job, ret := cacheRepository.jobsCache.Get(jobid)
-	if !ret {
-		value := cacheRepository.storageDriver.GetJob(jobid)
-		if value == nil {
-			return nil
-		}
-		job = value
-		cacheRepository.jobsCache.Add(value.JobId, value)
+	job := cacheRepository.localStorage.GetJob(jobid)
+	if job == nil {
+		job = cacheRepository.GetRawJob(jobid)
 	}
-	return job.(*models.Job)
+	return job
 }
 
 //RemoveJob is exported
 func (cacheRepository *CacheRepository) RemoveJob(jobid string) {
 
-	cacheRepository.jobsCache.Remove(jobid)
+	cacheRepository.localStorage.RemoveJob(jobid)
 }
 
 //RemoveJobs is exported
@@ -491,33 +485,45 @@ func (cacheRepository *CacheRepository) ChoiceWorker(location string, key string
 //CreateWorker is exported
 func (cacheRepository *CacheRepository) CreateWorker(key string, node *gzkwrapper.NodeData) {
 
-	server := cacheRepository.storageDriver.CreateLocationServer(node.Location, key, node.HostName, node.IpAddr, node.APIAddr, node.OS, node.Platform)
-	if server != nil {
+	worker := cacheRepository.nodeStore.GetWorker(key)
+	if worker != nil {
+		logger.WARN("[#cache#] %s create worker %s is already, %s(%s).", node.Location, node.HostName, node.IpAddr)
+		return
+	}
+
+	ret := cacheRepository.localStorage.ContainsLocationServer(node.Location, node.IpAddr, node.HostName)
+	if ret {
+		server := models.CreateServer(key, node, 1)
 		attach := models.AttachDecode(node.Attach)
 		cacheRepository.nodeStore.CreateWorker(node.Location, attach, server)
+		logger.INFO("[#cache#] %s create worker %s, %s(%s).", node.Location, key, node.HostName, node.IpAddr)
 	}
 }
 
 //ChangeWorker is exported
 func (cacheRepository *CacheRepository) ChangeWorker(key string, node *gzkwrapper.NodeData) {
 
-	server := cacheRepository.storageDriver.ChangeLocationServer(node.Location, key, node.HostName, node.IpAddr, node.APIAddr, node.OS, node.Platform)
-	if server != nil {
+	worker := cacheRepository.nodeStore.GetWorker(key)
+	if worker == nil {
+		logger.WARN("[#cache#] %s change worker %s not found, %s(%s).", node.Location, node.HostName, node.IpAddr)
+		return
+	}
+
+	ret := cacheRepository.localStorage.ContainsLocationServer(node.Location, node.IpAddr, node.HostName)
+	if ret {
+		server := models.CreateServer(key, node, 1)
 		attach := models.AttachDecode(node.Attach)
 		cacheRepository.nodeStore.ChangeWorker(node.Location, attach, server)
+		logger.INFO("[#cache#] %s change worker %s, %s(%s).", node.Location, key, node.HostName, node.IpAddr)
 	}
 }
 
 //RemoveWorker is exported
 func (cacheRepository *CacheRepository) RemoveWorker(key string, node *gzkwrapper.NodeData) {
 
-	cacheRepository.nodeStore.RemoveWorker(node.Location, key)
-	cacheRepository.storageDriver.RemoveLocationServer(node.Location, key)
-}
-
-//RemoveLocation is exported
-func (cacheRepository *CacheRepository) RemoveLocation(location string) {
-
-	cacheRepository.allocStore.RemoveAlloc(location)
-	cacheRepository.nodeStore.RemoveLocation(location)
+	worker := cacheRepository.nodeStore.GetWorker(key)
+	if worker != nil && worker.Alivestamp == node.Alivestamp {
+		cacheRepository.nodeStore.RemoveWorker(node.Location, key)
+		logger.INFO("[#cache#] %s remove worker %s, %s(%s).", node.Location, key, node.HostName, node.IpAddr)
+	}
 }

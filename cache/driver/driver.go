@@ -29,11 +29,6 @@ type StorageDriver interface {
 	Close()
 	GetLocationsName() []string
 	GetLocation(location string) *models.WorkLocation
-	GetLocationServer(location string, key string) *models.Server
-	GetLocationServers(location string) []*models.Server
-	CreateLocationServer(location string, key string, hostname string, ipaddr string, apiaddr string, os string, platform string) *models.Server
-	ChangeLocationServer(location string, key string, hostname string, ipaddr string, apiaddr string, os string, platform string) *models.Server
-	RemoveLocationServer(location string, key string)
 	GetLocationSimpleJobs(location string) []*models.SimpleJob
 	GetSimpleJob(jobid string) *models.SimpleJob
 	GetJobs() []*models.Job

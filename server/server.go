@@ -10,7 +10,6 @@ import "github.com/cloudtask/libtools/gounits/logger"
 
 import (
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -25,7 +24,6 @@ type CenterServer struct {
 	MessageCache    *models.MessageCache
 	stopCh          chan struct{}
 	gzkwrapper.INodeNotifyHandler
-	cache.ICacheRepositoryHandler
 }
 
 //NewCenterServer is exported
@@ -56,7 +54,11 @@ func NewCenterServer(key string) (*CenterServer, error) {
 		return nil, err
 	}
 
-	cacheRepository, err := cache.NewCacheRepository(cacheConfigs, server)
+	cacheConfigs.AllocHandlerFunc = server.OnAllocCacheHandlerFunc
+	cacheConfigs.NodeHandlerFunc = server.OnNodeCacheHandlerFunc
+	cacheConfigs.ReadLocationAllocFunc = server.readLocationAlloc
+	cacheConfigs.ProcLocationAllocFunc = server.procLocationAlloc
+	cacheRepository, err := cache.NewCacheRepository(cacheConfigs)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +104,7 @@ func (server *CenterServer) Startup(startCh chan<- bool) error {
 
 	startCh <- true
 	logger.INFO("[#server] server initialize......")
-	server.initCacheAlloc()
+	server.CacheRepository.InitLocalStorageLocations()
 	server.Master.RefreshCache()
 	return nil
 }
@@ -121,60 +123,83 @@ func (server *CenterServer) Stop() error {
 	return nil
 }
 
-func (server *CenterServer) initCacheAlloc() {
+//readLocationAlloc is exported
+//read location alloc data.
+func (server *CenterServer) readLocationAlloc(location string) []byte {
 
-	waitGroup := sync.WaitGroup{}
-	locations := server.CacheRepository.GetLocationsName()
-	waitGroup.Add(len(locations))
-	for _, location := range locations {
-		go func(locationName string) {
-			var (
-				ret         bool
-				err         error
-				allocBuffer []byte
-			)
-			allocPath := server.Master.Root + "/JOBS-" + locationName
-			ret, err = server.Master.Exists(allocPath)
-			if err == nil {
-				if !ret {
-					allocBuffer, _ = server.CacheRepository.MakeAllocBuffer()
-					err = server.Master.Create(allocPath, allocBuffer)
-				} else {
-					allocBuffer, err = server.Master.Get(allocPath)
-				}
-			}
-			if err != nil {
-				logger.ERROR("[#server#] init alloc %s error, %s", allocPath, err.Error())
-			} else {
-				//init local location, set alloc last version.
-				logger.INFO("[#server#] init alloc %s", allocPath)
-				server.CacheRepository.InitAllocBuffer(locationName, allocBuffer)
-			}
-			waitGroup.Done()
-		}(location)
+	var (
+		ret  bool
+		err  error
+		data []byte
+	)
+
+	allocPath := server.Master.Root + "/JOBS-" + location
+	ret, err = server.Master.Exists(allocPath)
+	if err != nil {
+		logger.ERROR("[#server#] %s alloc check exists %s error, %s.", location, allocPath, err)
+		return nil
 	}
-	waitGroup.Wait()
+
+	if ret {
+		if data, err = server.Master.Get(allocPath); err != nil {
+			logger.ERROR("[#server#] %s alloc get data %s error, %s.", location, allocPath, err)
+			return nil
+		}
+	}
+	return data
 }
 
 func (server *CenterServer) postCacheAlloc(location string, data []byte) {
 
-	if len(data) > 0 {
-		if err := server.Master.Set(server.Master.Root+"/JOBS-"+location, data); err != nil {
-			logger.ERROR("[#server#] post %s cache alloc error, %s", location, err)
-			return
-		}
-		logger.INFO("[#server#] post %s cache alloc successed...", location)
-	}
-}
+	var (
+		ret bool
+		err error
+	)
 
-func (server *CenterServer) removeCacheAlloc(location string) {
-
-	err := server.Master.Remove(server.Master.Root + "/JOBS-" + location)
+	allocPath := server.Master.Root + "/JOBS-" + location
+	ret, err = server.Master.Exists(allocPath)
 	if err != nil {
-		logger.ERROR("[#server#] remove %s cache alloc error, %s", location, err)
+		logger.ERROR("[#server#] post %s cache alloc exists error, %s.", location, err)
 		return
 	}
-	logger.INFO("[#server#] remove %s cache alloc successed...", location)
+
+	if !ret {
+		err = server.Master.Create(allocPath, data)
+	} else {
+		err = server.Master.Set(allocPath, data)
+	}
+
+	if err != nil {
+		logger.ERROR("[#server#] post %s cache alloc error, %s.", location, err)
+		return
+	}
+	logger.INFO("[#server#] post %s cache alloc successed...", location)
+}
+
+func (server *CenterServer) putCacheAlloc(location string, data []byte) {
+
+	var (
+		ret bool
+		err error
+	)
+
+	allocPath := server.Master.Root + "/JOBS-" + location
+	ret, err = server.Master.Exists(allocPath)
+	if err != nil {
+		logger.ERROR("[#server#] put %s cache alloc exists error, %s.", location, err)
+		return
+	}
+
+	if !ret {
+		logger.ERROR("[#server#] put %s cache alloc not found.", location)
+		return
+	}
+
+	if err = server.Master.Set(allocPath, data); err != nil {
+		logger.ERROR("[#server#] put %s cache alloc error, %s.", location, err)
+		return
+	}
+	logger.INFO("[#server#] put %s cache alloc successed...", location)
 }
 
 //monitorAllocLoop is exported
@@ -193,7 +218,7 @@ func (server *CenterServer) monitorAllocLoop(recoveryInterval time.Duration) {
 					if jobsAlloc != nil {
 						jobs := server.CacheRepository.GetLocationSimpleJobs(location)
 						server.Scheduler.RecoveryLocationAlloc(location, jobs)
-						server.cleanLocationAlloc(location, jobs, jobsAlloc)
+						server.cleanDumpLocationAlloc(location, jobs, jobsAlloc)
 					}
 				}
 			}
@@ -207,9 +232,9 @@ func (server *CenterServer) monitorAllocLoop(recoveryInterval time.Duration) {
 	}
 }
 
-//cleanLocationAlloc is exported
+//cleanDumpLocationAlloc is exported
 //清扫任务分配表，将分配表中存在，而数据库中不存在或已关闭的任务从分配表删除
-func (server *CenterServer) cleanLocationAlloc(location string, jobs []*models.SimpleJob, jobsAlloc *models.JobsAlloc) {
+func (server *CenterServer) cleanDumpLocationAlloc(location string, jobs []*models.SimpleJob, jobsAlloc *models.JobsAlloc) {
 
 	var (
 		found  = false
@@ -231,6 +256,30 @@ func (server *CenterServer) cleanLocationAlloc(location string, jobs []*models.S
 
 	if len(jobIds) > 0 {
 		server.CacheRepository.RemoveAllocJobs(location, jobIds)
+	}
+}
+
+func (server *CenterServer) procLocationAlloc(location string, addServers []*models.Server, delServers []*models.Server) {
+
+	nodeStore := gzkwrapper.NewNodeStore()
+	for _, addServer := range addServers {
+		nodes := server.Master.GetNodes(location, addServer.IPAddr, addServer.Name)
+		for key, node := range nodes {
+			server.CacheRepository.CreateWorker(key, node)
+			nodeStore.New[key] = node
+		}
+	}
+
+	for _, delServer := range delServers {
+		nodes := server.Master.GetNodes(location, delServer.IPAddr, delServer.Name)
+		for key, node := range nodes {
+			server.CacheRepository.RemoveWorker(key, node)
+			nodeStore.Dead[key] = node
+		}
+	}
+
+	if nodeStore.NewTotalSize() > 0 || nodeStore.DeadTotalSize() > 0 {
+		server.Scheduler.QuickAlloc(nodeStore.New, nodeStore.Dead)
 	}
 }
 
