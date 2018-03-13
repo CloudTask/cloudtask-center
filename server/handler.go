@@ -39,6 +39,20 @@ func (server *CenterServer) OnZkWrapperPulseHandlerFunc(key string, nodedata *gz
 	//中心服务器不实现心跳
 }
 
+func (server *CenterServer) OnSeverConfigsWatchHandlerFunc(path string, data []byte, err error) {
+
+	if err != nil {
+		logger.ERROR("[#server#] watch server config handler error, %s", err)
+		return
+	}
+
+	if err = server.RefreshServerConfig(data); err != nil {
+		logger.ERROR("[#server#] watch server config save error, %s", err)
+		return
+	}
+	logger.INFO("[#server#] watch server config changed.")
+}
+
 func (server *CenterServer) OnAllocCacheHandlerFunc(event cache.AllocEvent, location string, data []byte, err error) {
 
 	if err != nil {

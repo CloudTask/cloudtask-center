@@ -1,6 +1,7 @@
 version: v.2.0.0
 pidfile: ./jobserver.pid
 retrystartup: true
+useserverconfig: true
 cluster:
   hosts: 192.168.2.80:2181,192.168.2.81:2181,192.168.2.82:2181
   root: /cloudtask
@@ -15,7 +16,7 @@ scheduler:
   allocrecovery: 320s
 cache:
   lrusize: 1024
-  storage:
+  storagedriver:
       mongo:
         hosts: 192.168.2.80:27017,192.168.2.81:27017,192.168.2.82:27017
         database: cloudtask
@@ -33,8 +34,8 @@ notifications:
       - name: smtp
         host: smtp.example.com
         port: 25
-        user: 
-        password: 
+        user:
+        password:
         sender: cloudtask@example.com
         enabled: true
 logger:

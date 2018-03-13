@@ -7,6 +7,7 @@ import "github.com/cloudtask/cloudtask-center/scheduler"
 import "github.com/cloudtask/libtools/gounits/logger"
 import "github.com/cloudtask/libtools/gounits/system"
 import "github.com/cloudtask/libtools/gzkwrapper"
+import "github.com/cloudtask/common/models"
 import "gopkg.in/yaml.v2"
 
 import (
@@ -17,10 +18,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 )
 
 var (
-	SystemConfig *Configuration = nil
+	SystemConfig *Configuration       = nil
+	ServerConfig *models.ServerConfig = nil
 )
 
 var (
@@ -32,9 +35,11 @@ var (
 
 // Configuration is exported
 type Configuration struct {
-	Version      string `yaml:"version" json:"version"`
-	PidFile      string `yaml:"pidfile" json:"pidfile"`
-	RetryStartup bool   `yaml:"retrystartup" json:"retrystartup"`
+	sync.RWMutex
+	Version         string `yaml:"version" json:"version"`
+	PidFile         string `yaml:"pidfile" json:"pidfile"`
+	RetryStartup    bool   `yaml:"retrystartup" json:"retrystartup"`
+	UseServerConfig bool   `yaml:"useserverconfig" json:"useserverconfig"`
 
 	Cluster struct {
 		Hosts     string `yaml:"hosts" json:"hosts"`
@@ -60,7 +65,7 @@ type Configuration struct {
 
 	Cache struct {
 		LRUSize                    int `yaml:"lrusize" json:"lrusize"`
-		types.StorageDriverConfigs `yaml:"storage" json:"storage"`
+		types.StorageDriverConfigs `yaml:"storagedriver" json:"storagedriver"`
 	} `yaml:"cache" json:"cache"`
 
 	Notifications notify.Notifications `yaml:"notifications" json:"notifications"`
@@ -94,7 +99,10 @@ func New(file string) error {
 		return fmt.Errorf("config read %s", err.Error())
 	}
 
-	conf := &Configuration{RetryStartup: true}
+	conf := &Configuration{
+		RetryStartup:    true,
+		UseServerConfig: true,
+	}
 	if err := yaml.Unmarshal(buf, conf); err != nil {
 		return ErrConfigFormatInvalid
 	}
@@ -108,11 +116,34 @@ func New(file string) error {
 	log.Printf("[#etc#] version: %s\n", SystemConfig.Version)
 	log.Printf("[#etc#] pidfile: %s\n", SystemConfig.PidFile)
 	log.Printf("[#etc#] retrystartup: %s\n", strconv.FormatBool(SystemConfig.RetryStartup))
+	log.Printf("[#etc#] useserverconfig: %s\n", strconv.FormatBool(SystemConfig.UseServerConfig))
 	log.Printf("[#etc#] cluster: %+v\n", SystemConfig.Cluster)
 	log.Printf("[#etc#] APIlisten: %+v\n", SystemConfig.API)
 	log.Printf("[#etc#] scheduler: %+v\n", SystemConfig.Scheduler)
 	log.Printf("[#etc#] cache: %+v\n", SystemConfig.Cache)
 	log.Printf("[#etc#] logger: %+v\n", SystemConfig.Logger)
+	return nil
+}
+
+//SaveServerConfig is exported
+func SaveServerConfig(data []byte) error {
+
+	if SystemConfig != nil {
+		value, err := models.ParseServerConfigs(data)
+		if err != nil {
+			return err
+		}
+		SystemConfig.Lock()
+		ServerConfig = value
+		if value, ok := ServerConfig.StorageDriver.(map[string]interface{}); ok {
+			SystemConfig.Cache.StorageDriverConfigs = make(types.StorageDriverConfigs)
+			for backend, paramters := range value {
+				SystemConfig.Cache.StorageDriverConfigs[backend] = paramters.(map[string]interface{})
+				break
+			}
+		}
+		SystemConfig.Unlock()
+	}
 	return nil
 }
 
@@ -130,6 +161,15 @@ func RetryStartup() bool {
 
 	if SystemConfig != nil {
 		return SystemConfig.RetryStartup
+	}
+	return false
+}
+
+//UseServerConfig is exported
+func UseServerConfig() bool {
+
+	if SystemConfig != nil {
+		return SystemConfig.UseServerConfig
 	}
 	return false
 }
@@ -186,7 +226,7 @@ func CacheConfigs() *cache.CacheConfigs {
 			}
 			for backend, paramters := range SystemConfig.Cache.StorageDriverConfigs {
 				configs.StorageBackend = types.Backend(backend)
-				configs.StorageParameters = paramters
+				configs.StorageDriverParameters = paramters
 				break
 			}
 		}

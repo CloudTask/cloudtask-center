@@ -35,6 +35,18 @@ func init() {
 //New is exported
 func New(parameters types.Parameters) (driver.StorageDriver, error) {
 
+	rawAPIURL, readPageSize, err := parseEngineConfigs(parameters)
+	if err != nil {
+		return nil, err
+	}
+
+	return &NgCloudStorageDriver{
+		engine: NewEngine(rawAPIURL, readPageSize),
+	}, nil
+}
+
+func parseEngineConfigs(parameters types.Parameters) (string, int, error) {
+
 	var (
 		value        interface{}
 		ret          bool
@@ -52,12 +64,12 @@ func New(parameters types.Parameters) (driver.StorageDriver, error) {
 
 	value, ret = parameters["apiurl"]
 	if !ret {
-		return nil, ErrNgCloudStorageDriverURLInvalid
+		return "", 0, ErrNgCloudStorageDriverURLInvalid
 	}
 
 	pRawURL, err := url.Parse(value.(string))
 	if err != nil {
-		return nil, ErrNgCloudStorageDriverURLInvalid
+		return "", 0, ErrNgCloudStorageDriverURLInvalid
 	}
 
 	scheme := pRawURL.Scheme
@@ -65,10 +77,11 @@ func New(parameters types.Parameters) (driver.StorageDriver, error) {
 		scheme = "http"
 	}
 
-	rawAPIURL = scheme + "://" + pRawURL.Host + path.Clean(pRawURL.Path) + "?" + pRawURL.RawQuery
-	return &NgCloudStorageDriver{
-		engine: NewEngine(rawAPIURL, readPageSize),
-	}, nil
+	rawAPIURL = scheme + "://" + pRawURL.Host + path.Clean(pRawURL.Path)
+	if pRawURL.RawQuery != "" {
+		rawAPIURL = rawAPIURL + "?" + pRawURL.RawQuery
+	}
+	return rawAPIURL, readPageSize, nil
 }
 
 //Open is exported
@@ -79,6 +92,18 @@ func (driver *NgCloudStorageDriver) Open() error {
 
 //Close is exported
 func (driver *NgCloudStorageDriver) Close() {
+}
+
+//SetConfigParameters is exported
+func (driver *NgCloudStorageDriver) SetConfigParameters(parameters types.Parameters) {
+
+	rawAPIURL, readPageSize, err := parseEngineConfigs(parameters)
+	if err != nil {
+		logger.ERROR("[#cache#] ngcloud driver parse configs error, %s", err.Error())
+		return
+	}
+	driver.engine.SetConfigParameters(rawAPIURL, readPageSize)
+	logger.ERROR("[#cache#] ngcloud driver configs changed, %s %s", rawAPIURL, readPageSize)
 }
 
 //GetLocationsName is exported

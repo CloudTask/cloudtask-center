@@ -29,6 +29,18 @@ func init() {
 //New is exported
 func New(parameters types.Parameters) (driver.StorageDriver, error) {
 
+	mgoConfigs, err := parseEngineConfigs(parameters)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MongoStorageDriver{
+		engine: NewEngine(mgoConfigs),
+	}, nil
+}
+
+func parseEngineConfigs(parameters types.Parameters) (MgoConfigs, error) {
+
 	var (
 		ret   bool
 		value interface{}
@@ -41,18 +53,18 @@ func New(parameters types.Parameters) (driver.StorageDriver, error) {
 
 	value, ret = parameters["hosts"]
 	if !ret {
-		return nil, ErrMongoStorageDriverHostsInvalid
+		return mgoConfigs, ErrMongoStorageDriverHostsInvalid
 	}
 	mgoConfigs.Hosts = value.(string)
 
 	value, ret = parameters["database"]
 	if !ret {
-		return nil, ErrMongoStorageDriverDataBaseInvalid
+		return mgoConfigs, ErrMongoStorageDriverDataBaseInvalid
 	}
 	mgoConfigs.DataBase = value.(string)
 
 	if value, ret = parameters["auth"]; ret {
-		if auth, ok := value.(map[interface{}]interface{}); ok {
+		if auth, ok := value.(map[string]interface{}); ok {
 			if user, ok := auth["user"]; ok {
 				mgoConfigs.Auth["user"] = user.(string)
 			}
@@ -69,10 +81,7 @@ func New(parameters types.Parameters) (driver.StorageDriver, error) {
 			}
 		}
 	}
-
-	return &MongoStorageDriver{
-		engine: NewEngine(mgoConfigs),
-	}, nil
+	return mgoConfigs, nil
 }
 
 //Open is exported
@@ -85,6 +94,23 @@ func (driver *MongoStorageDriver) Open() error {
 func (driver *MongoStorageDriver) Close() {
 
 	driver.engine.Close()
+}
+
+//SetConfigParameters is exported
+func (driver *MongoStorageDriver) SetConfigParameters(parameters types.Parameters) {
+
+	mgoConfigs, err := parseEngineConfigs(parameters)
+	if err != nil {
+		logger.ERROR("[#cache#] mongo driver parse configs error, %s", err.Error())
+		return
+	}
+
+	err = driver.engine.SetConfigParameters(mgoConfigs)
+	if err != nil {
+		logger.ERROR("[#cache#] mongo driver set configs error, %s", err.Error())
+		return
+	}
+	logger.ERROR("[#cache#] mongo driver configs changed, %+v", mgoConfigs)
 }
 
 //GetLocationsName is exported

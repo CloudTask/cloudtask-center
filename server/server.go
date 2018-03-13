@@ -16,6 +16,7 @@ import (
 //CenterServer is exported
 type CenterServer struct {
 	Key             string
+	ConfigPath      string
 	Data            *gzkwrapper.NodeData
 	Master          *gzkwrapper.Server
 	NotifySender    *notify.NotifySender
@@ -45,8 +46,9 @@ func NewCenterServer(key string) (*CenterServer, error) {
 	}
 
 	server := &CenterServer{
-		Key:    key,
-		stopCh: make(chan struct{}),
+		Key:        key,
+		ConfigPath: clusterConfigs.Root + "/ServerConfig",
+		stopCh:     make(chan struct{}),
 	}
 
 	master, err := gzkwrapper.NewServer(key, clusterConfigs, server)
@@ -97,6 +99,10 @@ func (server *CenterServer) Startup(startCh chan<- bool) error {
 		return err
 	}
 
+	if etc.UseServerConfig() {
+		server.initServerConfig()
+	}
+
 	if err = server.CacheRepository.Open(); err != nil {
 		logger.ERROR("[#server] storage driver open failure, %s", err)
 		return err
@@ -115,10 +121,55 @@ func (server *CenterServer) Stop() error {
 	close(server.stopCh)
 	server.CacheRepository.Close()
 	server.CacheRepository.Clear()
+	server.closeServerConfig()
 	server.Master.Clear()
 	if err := server.Master.Close(); err != nil {
 		logger.ERROR("[#server] cluster zookeeper close error, %s", err.Error())
 		return err
+	}
+	return nil
+}
+
+//initServerConfig is exported
+//initialize server congfig and watching zk config node path.
+func (server *CenterServer) initServerConfig() {
+
+	//watch server config path.
+	err := server.Master.WatchOpen(server.ConfigPath, server.OnSeverConfigsWatchHandlerFunc)
+	if err != nil {
+		logger.WARN("[#server] init serverConfig error %s, used local configs.", err)
+		return
+	}
+
+	//read config data.
+	data, err := server.Master.Get(server.ConfigPath)
+	if err != nil {
+		logger.WARN("[#server] get serverConfig error %s, used local configs.", err)
+		return
+	}
+	//save data to etc serverConfig.
+	server.RefreshServerConfig(data)
+	logger.INFO("[#server#] inited server config.")
+}
+
+//closeServerConfig is exported
+func (server *CenterServer) closeServerConfig() {
+
+	server.Master.WatchClose(server.ConfigPath)
+}
+
+//RefreshServerConfig is exported
+//save serverConfig, re-set to references objects.
+func (server *CenterServer) RefreshServerConfig(data []byte) error {
+
+	if etc.UseServerConfig() {
+		if err := etc.SaveServerConfig(data); err != nil {
+			return err
+		}
+
+		if cacheConfigs := etc.CacheConfigs(); cacheConfigs != nil {
+			server.CacheRepository.SetStorageDriverConfigParameters(cacheConfigs.StorageDriverParameters)
+		}
 	}
 	return nil
 }

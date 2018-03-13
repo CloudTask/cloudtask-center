@@ -27,13 +27,13 @@ type ProcLocationAllocFunc func(location string, addServers []*models.Server, de
 
 //CacheConfigs is exported
 type CacheConfigs struct {
-	LRUSize               int
-	StorageBackend        types.Backend
-	StorageParameters     types.Parameters
-	AllocHandlerFunc      AllocCacheEventHandlerFunc
-	NodeHandlerFunc       NodeCacheEventHandlerFunc
-	ReadLocationAllocFunc ReadLocationAllocFunc
-	ProcLocationAllocFunc ProcLocationAllocFunc
+	LRUSize                 int
+	StorageBackend          types.Backend
+	StorageDriverParameters types.Parameters
+	AllocHandlerFunc        AllocCacheEventHandlerFunc
+	NodeHandlerFunc         NodeCacheEventHandlerFunc
+	ReadLocationAllocFunc   ReadLocationAllocFunc
+	ProcLocationAllocFunc   ProcLocationAllocFunc
 }
 
 //CacheRepository is expotred
@@ -50,7 +50,7 @@ type CacheRepository struct {
 //NewCacheRepository is expotred
 func NewCacheRepository(configs *CacheConfigs) (*CacheRepository, error) {
 
-	storageDriver, err := driver.NewDriver(configs.StorageBackend, configs.StorageParameters)
+	storageDriver, err := driver.NewDriver(configs.StorageBackend, configs.StorageDriverParameters)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +95,12 @@ func (cacheRepository *CacheRepository) Open() error {
 func (cacheRepository *CacheRepository) Close() {
 
 	cacheRepository.storageDriver.Close()
+}
+
+//SetStorageDriverConfigParameters is exported
+func (cacheRepository *CacheRepository) SetStorageDriverConfigParameters(parameters types.Parameters) {
+
+	cacheRepository.storageDriver.SetConfigParameters(parameters)
 }
 
 //Clear is expotred

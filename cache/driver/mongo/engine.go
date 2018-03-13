@@ -46,7 +46,6 @@ func NewEngine(configs MgoConfigs) *Engine {
 
 	return &Engine{
 		MgoConfigs: configs,
-		stopCh:     make(chan struct{}),
 	}
 }
 
@@ -98,6 +97,14 @@ func generateHostURL(configs MgoConfigs) (string, error) {
 	return mgoURL, nil
 }
 
+//SetConfigParameters is exported
+func (engine *Engine) SetConfigParameters(configs MgoConfigs) error {
+
+	engine.MgoConfigs = configs
+	engine.Close()
+	return engine.Open()
+}
+
 //Open is exported
 func (engine *Engine) Open() error {
 
@@ -120,14 +127,21 @@ func (engine *Engine) Open() error {
 	session.SetMode(mgo.Strong, true)
 	session.SetPoolLimit(maxPoolSize)
 	engine.globalSession = session
-	go engine.pulseSessionLoop()
+	if engine.stopCh == nil {
+		engine.stopCh = make(chan struct{})
+		go engine.pulseSessionLoop()
+	}
 	return nil
 }
 
 //Close is exported
 func (engine *Engine) Close() {
 
-	close(engine.stopCh)
+	if engine.stopCh != nil {
+		close(engine.stopCh)
+		engine.stopCh = nil
+	}
+
 	if engine.globalSession != nil {
 		engine.globalSession.Close()
 	}

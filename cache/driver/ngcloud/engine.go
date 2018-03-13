@@ -45,6 +45,12 @@ func NewEngine(rawAPIURL string, readPageSize int) *Engine {
 	}
 }
 
+func (engine *Engine) SetConfigParameters(rawAPIURL string, readPageSize int) {
+
+	engine.rawAPIURL = rawAPIURL
+	engine.readPageSize = readPageSize
+}
+
 func (engine *Engine) getLocation(location string) (*models.WorkLocation, error) {
 
 	respData, err := engine.client.Get(context.Background(), engine.rawAPIURL+"/sys_locations/"+location, nil, nil)

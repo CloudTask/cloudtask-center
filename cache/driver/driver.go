@@ -27,6 +27,7 @@ var (
 type StorageDriver interface {
 	Open() error
 	Close()
+	SetConfigParameters(parameters types.Parameters)
 	GetLocationsName() []string
 	GetLocation(location string) *models.WorkLocation
 	GetLocationSimpleJobs(location string) []*models.SimpleJob
