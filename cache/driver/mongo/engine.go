@@ -12,17 +12,24 @@ import (
 )
 
 const (
+	//mongo connect maxPoolSize default value.
 	defaultMaxPoolSize = 20
 )
 
 const (
-	SYS_LOCATIONNS = "sys_locations"
-	SYS_JOBS       = "sys_jobs"
-	SYS_LOGS       = "logs"
+	//sysLocatinsCollection is exported, mongo sys_locations collection name define.
+	sysLocatinsCollection = "sys_locations"
+	//sysJobsCollection is exported, mongo sys_jobs collection name define.
+	sysJobsCollection = "sys_jobs"
+	//sysLogsCollection is exported, mongo logs collection name define.
+	sysLogsCollection = "logs"
 )
 
+//M is exported
+//mongo bson map type define.
 type M bson.M
 
+//D is exported
 type D bson.D
 
 //MgoConfigs is exported
@@ -152,7 +159,7 @@ func (engine *Engine) getLocation(location string) (*models.WorkLocation, error)
 	session := engine.getSession()
 	defer session.Close()
 	workLocation := &models.WorkLocation{}
-	if err := session.DB(engine.DataBase).C(SYS_LOCATIONNS).
+	if err := session.DB(engine.DataBase).C(sysLocatinsCollection).
 		Find(M{"location": location}).
 		Select(M{"_id": 0}).One(workLocation); err != nil {
 		if err == mgo.ErrNotFound {
@@ -167,7 +174,7 @@ func (engine *Engine) postLocation(workLocation *models.WorkLocation) error {
 
 	session := engine.getSession()
 	defer session.Close()
-	return session.DB(engine.DataBase).C(SYS_LOCATIONNS).
+	return session.DB(engine.DataBase).C(sysLocatinsCollection).
 		Insert(workLocation)
 }
 
@@ -175,7 +182,7 @@ func (engine *Engine) putLocation(workLocation *models.WorkLocation) error {
 
 	session := engine.getSession()
 	defer session.Close()
-	return session.DB(engine.DataBase).C(SYS_LOCATIONNS).
+	return session.DB(engine.DataBase).C(sysLocatinsCollection).
 		Update(M{"location": workLocation.Location}, workLocation)
 }
 
@@ -184,7 +191,7 @@ func (engine *Engine) readLocationsName() ([]string, error) {
 	session := engine.getSession()
 	defer session.Close()
 	workLocations := []*models.WorkLocation{}
-	if err := session.DB(engine.DataBase).C(SYS_LOCATIONNS).
+	if err := session.DB(engine.DataBase).C(sysLocatinsCollection).
 		Find(M{}).
 		Select(M{"_id": 0, "location": 1}).
 		All(&workLocations); err != nil {
@@ -203,7 +210,7 @@ func (engine *Engine) readSimpleJobs(query M) ([]*models.SimpleJob, error) {
 	session := engine.getSession()
 	defer session.Close()
 	jobs := []*models.SimpleJob{}
-	if err := session.DB(engine.DataBase).C(SYS_JOBS).
+	if err := session.DB(engine.DataBase).C(sysJobsCollection).
 		Find(query).
 		Select(M{"_id": 0, "jobid": 1, "name": 1, "location": 1, "groupid": 1, "servers": 1, "enabled": 1, "stat": 1}).
 		All(&jobs); err != nil {
@@ -217,7 +224,7 @@ func (engine *Engine) readJobs(query M) ([]*models.Job, error) {
 	session := engine.getSession()
 	defer session.Close()
 	jobs := []*models.Job{}
-	if err := session.DB(engine.DataBase).C(SYS_JOBS).
+	if err := session.DB(engine.DataBase).C(sysJobsCollection).
 		Find(query).
 		Select(M{"_id": 0}).
 		All(&jobs); err != nil {
@@ -249,7 +256,7 @@ func (engine *Engine) getJob(jobid string) (*models.Job, error) {
 	session := engine.getSession()
 	defer session.Close()
 	job := &models.Job{}
-	if err := session.DB(engine.DataBase).C(SYS_JOBS).
+	if err := session.DB(engine.DataBase).C(sysJobsCollection).
 		Find(M{"jobid": jobid}).
 		Select(M{"_id": 0}).One(job); err != nil {
 		if err == mgo.ErrNotFound {
@@ -264,7 +271,7 @@ func (engine *Engine) putJob(job *models.Job) error {
 
 	session := engine.getSession()
 	defer session.Close()
-	return session.DB(engine.DataBase).C(SYS_JOBS).
+	return session.DB(engine.DataBase).C(sysJobsCollection).
 		Update(M{"jobid": job.JobId}, M{"$set": M{
 			"stat":    job.Stat,
 			"execerr": job.ExecErr,
@@ -276,7 +283,7 @@ func (engine *Engine) postJobLog(jobLog *models.JobLog) error {
 
 	session := engine.getSession()
 	defer session.Close()
-	return session.DB(engine.DataBase).C(SYS_LOGS).
+	return session.DB(engine.DataBase).C(sysLogsCollection).
 		Insert(jobLog)
 }
 

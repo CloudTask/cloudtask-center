@@ -11,8 +11,10 @@ import (
 )
 
 var (
-	ErrMongoStorageDriverHostsInvalid    = errors.New("mongo storage driver hosts invalid.")
-	ErrMongoStorageDriverDataBaseInvalid = errors.New("mongo storage driver database invalid.")
+	//ErrMongoStorageDriverHostsInvalid is exported, parameters map not has 'hosts' key error.
+	ErrMongoStorageDriverHostsInvalid = errors.New("mongo storage driver hosts invalid")
+	//ErrMongoStorageDriverDataBaseInvalid is exported, parameters map not has 'database' key error.
+	ErrMongoStorageDriverDataBaseInvalid = errors.New("mongo storage driver database invalid")
 )
 
 //MongoStorageDriver is exported
