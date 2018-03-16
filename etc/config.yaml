@@ -26,8 +26,8 @@ cache:
         #}
         options: [
           "maxPoolSize=20",
-          "replicaSet=mgoCluster",
-		      #"authSource=admin"
+          "replicaSet=mgoCluster"
+		  #"authSource=admin"
         ]
 notifications:
     endpoints:
