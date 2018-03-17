@@ -76,7 +76,7 @@ func (store *NodeStore) GetWorker(key string) *Worker {
 }
 
 //ContainsLocationWorker is exported
-func (store *NodeStore) ContainsLocationWorker(location string, ipaddr string, hostname string) bool {
+func (store *NodeStore) ContainsLocationWorker(location string, ipaddr string) bool {
 
 	store.RLock()
 	defer store.RUnlock()
@@ -84,11 +84,6 @@ func (store *NodeStore) ContainsLocationWorker(location string, ipaddr string, h
 		for _, worker := range workers {
 			if itIPAddr := strings.TrimSpace(worker.IPAddr); itIPAddr != "" {
 				if itIPAddr == ipaddr {
-					return true
-				}
-			}
-			if itHostName := strings.TrimSpace(worker.Name); itHostName != "" {
-				if strings.ToUpper(itHostName) == strings.ToUpper(hostname) {
 					return true
 				}
 			}

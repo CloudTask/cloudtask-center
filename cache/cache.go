@@ -493,13 +493,13 @@ func (cacheRepository *CacheRepository) CreateWorker(key string, node *gzkwrappe
 
 	worker := cacheRepository.nodeStore.GetWorker(key)
 	if worker != nil {
-		logger.WARN("[#cache#] %s create worker %s key is already, %s(%s).", node.Location, node.HostName, node.IpAddr)
+		logger.WARN("[#cache#] %s create worker %s is already, %s(%s).", node.Location, key, node.HostName, node.IpAddr)
 		return
 	}
 
-	ret := cacheRepository.nodeStore.ContainsLocationWorker(node.Location, node.IpAddr, node.HostName)
+	ret := cacheRepository.nodeStore.ContainsLocationWorker(node.Location, node.IpAddr)
 	if ret {
-		logger.WARN("[#cache#] %s create worker %s ip or host is already, %s(%s).", node.Location, node.HostName, node.IpAddr)
+		logger.WARN("[#cache#] %s create worker %s ipaddr is already, %s(%s).", node.Location, key, node.HostName, node.IpAddr)
 		return
 	}
 
