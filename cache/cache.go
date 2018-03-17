@@ -493,11 +493,17 @@ func (cacheRepository *CacheRepository) CreateWorker(key string, node *gzkwrappe
 
 	worker := cacheRepository.nodeStore.GetWorker(key)
 	if worker != nil {
-		logger.WARN("[#cache#] %s create worker %s is already, %s(%s).", node.Location, node.HostName, node.IpAddr)
+		logger.WARN("[#cache#] %s create worker %s key is already, %s(%s).", node.Location, node.HostName, node.IpAddr)
 		return
 	}
 
-	ret := cacheRepository.localStorage.ContainsLocationServer(node.Location, node.IpAddr, node.HostName)
+	ret := cacheRepository.nodeStore.ContainsLocationWorker(node.Location, node.IpAddr, node.HostName)
+	if ret {
+		logger.WARN("[#cache#] %s create worker %s ip or host is already, %s(%s).", node.Location, node.HostName, node.IpAddr)
+		return
+	}
+
+	ret = cacheRepository.localStorage.ContainsLocationServer(node.Location, node.IpAddr, node.HostName)
 	if ret {
 		server := models.CreateServer(key, node, 1)
 		attach := models.AttachDecode(node.Attach)
@@ -511,7 +517,7 @@ func (cacheRepository *CacheRepository) ChangeWorker(key string, node *gzkwrappe
 
 	worker := cacheRepository.nodeStore.GetWorker(key)
 	if worker == nil {
-		logger.WARN("[#cache#] %s change worker %s not found, %s(%s).", node.Location, node.HostName, node.IpAddr)
+		logger.WARN("[#cache#] %s change worker %s key is not found, %s(%s).", node.Location, node.HostName, node.IpAddr)
 		return
 	}
 
