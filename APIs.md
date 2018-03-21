@@ -251,7 +251,7 @@ HTTP 200 OK
 
 > `PUT` - http://localhost:8985/cloudtask/v2/jobs/action
 
-&nbsp;&nbsp;&nbsp;&nbsp; a job actions request, operation job `start` | `stop`.
+&nbsp;&nbsp;&nbsp;&nbsp; action a job, operation is `start` | `stop`.
 ``` json
 /*Request*/
 {
