@@ -19,7 +19,8 @@ $  ./cloudtask-center -f etc/config.yaml
 ```
 
 > docker image
-
+[![](https://images.microbadger.com/badges/image/cloudtask/cloudtask-center:2.0.0.svg)](https://microbadger.com/images/cloudtask/cloudtask-center:2.0.0 "Get your own image badge on microbadger.com")
+[![](https://images.microbadger.com/badges/version/cloudtask/cloudtask-center:2.0.0.svg)](https://microbadger.com/images/cloudtask/cloudtask-center:2.0.0 "Get your own version badge on microbadger.com")
 ``` bash
 $ docker run -d --net=host --restart=always \
   -v /opt/app/cloudtask-center/etc/config.yaml:/opt/cloudtask/etc/config.yaml \
