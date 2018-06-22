@@ -32,6 +32,27 @@ func ResolveJobsAllocDataRequest(c *Context) string {
 	return runtime
 }
 
+//ResolveServerJobsAllocDataRequest is exported
+func ResolveServerJobsAllocDataRequest(c *Context) *ServerJobsAllocDataRequest {
+
+	vars := mux.Vars(c.request)
+	runtime := strings.TrimSpace(vars["runtime"])
+	if len(runtime) == 0 {
+		return nil
+	}
+
+	server := strings.TrimSpace(vars["server"])
+	if len(server) == 0 {
+		return nil
+	}
+
+	return &ServerJobsAllocDataRequest{
+		Context: c,
+		Runtime: runtime,
+		Server:  server,
+	}
+}
+
 //ResolveServersRequest is exported
 func ResolveServersRequest(c *Context) string {
 

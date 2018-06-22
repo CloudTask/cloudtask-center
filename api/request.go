@@ -26,3 +26,10 @@ type JobActionRequest struct {
 	JobId   string `json:"jobid"`
 	Action  string `json:"action"`
 }
+
+//ServerJobsAllocDataRequest is exported
+type ServerJobsAllocDataRequest struct {
+	Context *Context
+	Runtime string `json:"runtime"`
+	Server  string `json:"server"`
+}

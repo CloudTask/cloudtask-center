@@ -70,6 +70,28 @@ func getJobsAllocData(c *Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+func getServerJobsAllocData(c *Context) error {
+
+	response := &ResponseImpl{}
+	request := ResolveServerJobsAllocDataRequest(c)
+	if request == nil {
+		response.SetContent(ErrRequestResolveInvaild.Error())
+		return c.JSON(http.StatusBadRequest, response)
+	}
+
+	cacheRepository := c.Get("CacheRepository").(*cache.CacheRepository)
+	jobsAllocData := cacheRepository.GetServerAllocData(request.Runtime, request.Server)
+	if jobsAllocData == nil {
+		response.SetContent(ErrRequestNotFound.Error())
+		return c.JSON(http.StatusNotFound, response)
+	}
+
+	respData := GetJobsAllocDataResponse{JobsAlloc: jobsAllocData}
+	response.SetContent(ErrRequestSuccessed.Error())
+	response.SetData(respData)
+	return c.JSON(http.StatusOK, response)
+}
+
 func getServers(c *Context) error {
 
 	response := &ResponseImpl{}

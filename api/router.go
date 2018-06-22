@@ -12,10 +12,11 @@ type handler func(c *Context) error
 
 var routes = map[string]map[string]handler{
 	"GET": {
-		"/cloudtask/v2/_ping":                        ping,
-		"/cloudtask/v2/jobs/{jobid}/base":            getJobBase,
-		"/cloudtask/v2/runtimes/{runtime}/jobsalloc": getJobsAllocData,
-		"/cloudtask/v2/runtimes/{runtime}/servers":   getServers,
+		"/cloudtask/v2/_ping":                                 ping,
+		"/cloudtask/v2/jobs/{jobid}/base":                     getJobBase,
+		"/cloudtask/v2/runtimes/{runtime}/jobsalloc":          getJobsAllocData,
+		"/cloudtask/v2/runtimes/{runtime}/{server}/jobsalloc": getServerJobsAllocData,
+		"/cloudtask/v2/runtimes/{runtime}/servers":            getServers,
 	},
 	"POST": {
 		"/cloudtask/v2/messages": postMessages,

@@ -6,9 +6,13 @@ RUN mkdir -p /opt/cloudtask/etc
 
 RUN mkdir -p /opt/cloudtask/logs
 
+RUN mkdir -p /opt/jobserver/etc/notify
+
 COPY etc /opt/cloudtask/etc
 
 COPY cloudtask-center /opt/cloudtask/cloudtask-center
+
+COPY notify /opt/jobserver/etc/notify
 
 WORKDIR /opt/cloudtask
 

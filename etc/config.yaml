@@ -1,4 +1,4 @@
-version: v.2.0.0
+version: v.2.3.4
 pidfile: ./jobserver.pid
 retrystartup: true
 useserverconfig: true
@@ -40,6 +40,6 @@ notifications:
         enabled: true
 logger:
     logfile: ./logs/jobserver.log
-    loglevel: info
+    loglevel: error
     logsize: 20971520
 ...

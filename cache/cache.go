@@ -235,6 +235,55 @@ func (cacheRepository *CacheRepository) GetAllocData(location string) *models.Jo
 	return jobsAllocData
 }
 
+//GetServerAllocData is exported
+func (cacheRepository *CacheRepository) GetServerAllocData(location string, server string) *models.JobsAllocData {
+
+	var (
+		w     *Worker
+		found = false
+	)
+
+	workers := cacheRepository.nodeStore.GetWorkers(location)
+	for _, worker := range workers {
+		if worker.IPAddr == server || strings.ToUpper(worker.Name) == strings.ToUpper(server) {
+			w = worker
+			found = true
+			break
+		}
+	}
+
+	if !found { //server not found.
+		return nil
+	}
+
+	jobsAlloc := cacheRepository.GetAlloc(location)
+	if jobsAlloc == nil {
+		return nil
+	}
+
+	jobsAllocData := &models.JobsAllocData{
+		Location: location,
+		Version:  jobsAlloc.Version,
+		Data:     []*models.JobDataInfo{},
+	}
+
+	for _, jobData := range jobsAlloc.Jobs {
+		if jobData.Key == w.Key {
+			jobDataInfo := &models.JobDataInfo{}
+			jobDataInfo.JobId = jobData.JobId
+			jobDataInfo.Key = jobData.Key
+			jobDataInfo.Version = jobData.Version
+			jobDataInfo.IpAddr = w.IPAddr
+			jobDataInfo.HostName = w.Name
+			if job := cacheRepository.GetSimpleJob(jobData.JobId); job != nil {
+				jobDataInfo.JobName = job.Name
+			}
+			jobsAllocData.Data = append(jobsAllocData.Data, jobDataInfo)
+		}
+	}
+	return jobsAllocData
+}
+
 //HasAlloc is exported
 func (cacheRepository *CacheRepository) HasAlloc(location string) bool {
 
